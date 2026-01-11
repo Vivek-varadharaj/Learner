@@ -38,38 +38,37 @@ function initializeFirebase() {
         db = firebase.firestore();
         auth = firebase.auth();
         console.log('Firebase initialized successfully');
+        console.log('Current domain:', window.location.origin);
+        console.log('Firebase authDomain:', FIREBASE_CONFIG.authDomain);
         
-        // Handle redirect result if returning from Google sign-in
-        auth.getRedirectResult().then((result) => {
-            if (result.user) {
-                console.log('Redirect sign-in successful:', result.user.email);
-                // User signed in via redirect
-                resetAllButtonLoadingStates();
-            }
-        }).catch((error) => {
-            console.error('Redirect sign-in error:', error);
-            // Reset button state if there was an error
-            resetAllButtonLoadingStates();
-            if (authError) {
-                let errorMessage = 'Sign-in failed. Please try again.';
-                if (error.code === 'auth/redirect-cancelled-by-user') {
-                    errorMessage = 'Sign-in was cancelled.';
-                }
-                authError.textContent = errorMessage;
-                authError.classList.remove('hidden');
-            }
+        // Set auth persistence to LOCAL (default) to persist across page refreshes
+        auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch((error) => {
+            console.error('Error setting auth persistence:', error);
         });
         
+        // Important: Set the language code if needed
+        auth.languageCode = 'en';
+        
+        // No need to check redirect result when using popup - popup handles it directly
+        
         // Listen for auth state changes
+        // This listener will be called:
+        // 1. On initial page load (with current auth state)
+        // 2. After redirect completes (with signed-in user)
+        // 3. When user signs out manually
         auth.onAuthStateChanged((user) => {
+            console.log('=== Auth State Changed ===');
+            console.log('User:', user ? user.email : 'null');
+            console.log('UID:', user ? user.uid : 'null');
+            
             currentUser = user;
             if (user) {
-                console.log('User signed in:', user.email);
+                console.log('✅ User is signed in:', user.email);
                 // Reset all button states when signing in
                 resetAllButtonLoadingStates();
                 showLanding();
             } else {
-                console.log('User signed out');
+                console.log('❌ User is signed out');
                 // Reset all button states when signing out
                 resetAllButtonLoadingStates();
                 showAuth();
@@ -301,21 +300,29 @@ async function handleGoogleSignIn() {
     provider.addScope('email');
     
     try {
-        console.log('Attempting Google sign-in...');
-        // Use redirect instead of popup to avoid COOP policy issues
-        await auth.signInWithRedirect(provider);
-        // Page will redirect to Google, then back to app
-        // Auth state listener will handle navigation on return
+        console.log('🔄 Attempting Google sign-in with popup...');
+        console.log('Provider:', provider);
+        console.log('Auth object:', auth);
+        
+        // Use popup for better UX - no page redirect needed
+        const result = await auth.signInWithPopup(provider);
+        console.log('✅ Google sign-in successful:', result.user.email);
+        // Auth state listener will handle navigation
+        // Reset button state will be handled by auth state listener
     } catch (error) {
-        // Reset button on error (if redirect fails immediately)
+        // Reset button on error
         setButtonLoading(googleSignInButton, false);
-        console.error('Google sign-in error:', error);
+        console.error('❌ Google sign-in error:', error);
+        console.error('Error code:', error.code);
+        console.error('Error message:', error.message);
         
         let errorMessage = 'Failed to sign in with Google';
         
         // Provide more specific error messages
-        if (error.code === 'auth/redirect-cancelled-by-user') {
+        if (error.code === 'auth/popup-closed-by-user') {
             errorMessage = 'Sign-in was cancelled. Please try again.';
+        } else if (error.code === 'auth/popup-blocked') {
+            errorMessage = 'Popup was blocked. Please allow popups for this site and try again.';
         } else if (error.code === 'auth/invalid-credential') {
             errorMessage = 'Google Sign-In is not properly configured. Please check Firebase Console settings.';
         } else if (error.code === 'auth/operation-not-allowed') {
@@ -901,29 +908,40 @@ if (logoutButton) {
 }
 
 // Google sign-in button handler
-if (googleSignInButton) {
-    console.log('Google sign-in button found, attaching event listener');
-    googleSignInButton.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        console.log('Google sign-in button clicked');
-        handleGoogleSignIn();
+// Try to attach immediately, and also on DOMContentLoaded as fallback
+function attachGoogleSignInHandler() {
+    const btn = document.getElementById('googleSignInButton');
+    if (btn) {
+        console.log('✅ Google sign-in button found, attaching event listener');
+        // Remove any existing listeners first
+        btn.replaceWith(btn.cloneNode(true));
+        const newBtn = document.getElementById('googleSignInButton');
+        newBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('🖱️ Google sign-in button clicked!');
+            handleGoogleSignIn();
+        });
+        console.log('✅ Event listener attached to Google sign-in button');
+    } else {
+        console.warn('⚠️ googleSignInButton not found yet');
+    }
+}
+
+// Try to attach immediately
+attachGoogleSignInHandler();
+
+// Also try on DOMContentLoaded as fallback
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        console.log('📄 DOMContentLoaded - trying to attach Google sign-in handler');
+        attachGoogleSignInHandler();
     });
 } else {
-    console.error('googleSignInButton not found');
-    // Try to attach after DOM is ready
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => {
-            const btn = document.getElementById('googleSignInButton');
-            if (btn) {
-                btn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    handleGoogleSignIn();
-                });
-            }
-        });
-    }
+    // DOM already loaded, try again after a short delay
+    setTimeout(() => {
+        attachGoogleSignInHandler();
+    }, 100);
 }
 
 // Start daily questions

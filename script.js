@@ -49,7 +49,18 @@ function initializeFirebase() {
         // Important: Set the language code if needed
         auth.languageCode = 'en';
         
-        // No need to check redirect result when using popup - popup handles it directly
+        // Check redirect result in case popup failed and we fell back to redirect
+        auth.getRedirectResult().then((result) => {
+            if (result.user) {
+                console.log('✅ Redirect sign-in successful:', result.user.email);
+                resetAllButtonLoadingStates();
+            }
+        }).catch((error) => {
+            // Ignore redirect errors if no redirect happened (normal case)
+            if (error.code && error.code !== 'auth/no-auth-event') {
+                console.log('ℹ️ No redirect result (normal if using popup)');
+            }
+        });
         
         // Listen for auth state changes
         // This listener will be called:
@@ -303,18 +314,50 @@ async function handleGoogleSignIn() {
         console.log('🔄 Attempting Google sign-in with popup...');
         console.log('Provider:', provider);
         console.log('Auth object:', auth);
+        console.log('Current window:', window.location.href);
+        console.log('Firebase auth available:', typeof firebase !== 'undefined' && typeof firebase.auth !== 'undefined');
         
         // Use popup for better UX - no page redirect needed
+        // Note: Some browsers may open popups as new tabs if popup blocker is active
+        // This is a browser behavior, not something we can control
         const result = await auth.signInWithPopup(provider);
         console.log('✅ Google sign-in successful:', result.user.email);
+        console.log('✅ Popup closed successfully');
+        
+        // Reset button state immediately after successful sign-in
+        resetAllButtonLoadingStates();
+        
         // Auth state listener will handle navigation
-        // Reset button state will be handled by auth state listener
+        // The popup should have closed automatically after successful authentication
     } catch (error) {
-        // Reset button on error
-        setButtonLoading(googleSignInButton, false);
-        console.error('❌ Google sign-in error:', error);
+        console.error('❌ Google sign-in popup error:', error);
         console.error('Error code:', error.code);
         console.error('Error message:', error.message);
+        console.error('Full error object:', error);
+        
+        // If popup is blocked or fails, try redirect as fallback
+        if (error.code === 'auth/popup-blocked' || error.code === 'auth/popup-closed-by-user' || 
+            (error.message && error.message.includes('popup'))) {
+            console.log('🔄 Popup failed, trying redirect as fallback...');
+            try {
+                await auth.signInWithRedirect(provider);
+                console.log('✅ Redirect initiated - page will redirect to Google');
+                // Page will redirect, so no code after this executes
+                return;
+            } catch (redirectError) {
+                console.error('❌ Redirect also failed:', redirectError);
+                setButtonLoading(googleSignInButton, false);
+                
+                if (authError) {
+                    authError.textContent = 'Sign-in failed. Please allow popups or try again.';
+                    authError.classList.remove('hidden');
+                }
+                return;
+            }
+        }
+        
+        // Reset button on error
+        setButtonLoading(googleSignInButton, false);
         
         let errorMessage = 'Failed to sign in with Google';
         
@@ -323,10 +366,15 @@ async function handleGoogleSignIn() {
             errorMessage = 'Sign-in was cancelled. Please try again.';
         } else if (error.code === 'auth/popup-blocked') {
             errorMessage = 'Popup was blocked. Please allow popups for this site and try again.';
+            console.warn('💡 Tip: Check your browser popup blocker settings');
+        } else if (error.code === 'auth/cancelled-popup-request') {
+            errorMessage = 'Another sign-in request is in progress. Please wait.';
         } else if (error.code === 'auth/invalid-credential') {
             errorMessage = 'Google Sign-In is not properly configured. Please check Firebase Console settings.';
         } else if (error.code === 'auth/operation-not-allowed') {
             errorMessage = 'Google Sign-In is not enabled. Please enable it in Firebase Console.';
+        } else if (error.code && error.code.startsWith('auth/')) {
+            errorMessage = `Authentication error: ${error.message || error.code}`;
         } else if (error.message) {
             errorMessage = error.message;
         }
@@ -913,35 +961,41 @@ function attachGoogleSignInHandler() {
     const btn = document.getElementById('googleSignInButton');
     if (btn) {
         console.log('✅ Google sign-in button found, attaching event listener');
-        // Remove any existing listeners first
-        btn.replaceWith(btn.cloneNode(true));
-        const newBtn = document.getElementById('googleSignInButton');
+        // Remove any existing listeners by cloning the button
+        const newBtn = btn.cloneNode(true);
+        btn.parentNode.replaceChild(newBtn, btn);
+        
+        // Attach the event listener to the new button
         newBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
             console.log('🖱️ Google sign-in button clicked!');
+            console.log('Button element:', newBtn);
+            console.log('handleGoogleSignIn function:', typeof handleGoogleSignIn);
             handleGoogleSignIn();
         });
         console.log('✅ Event listener attached to Google sign-in button');
+        return true;
     } else {
         console.warn('⚠️ googleSignInButton not found yet');
+        return false;
     }
 }
 
 // Try to attach immediately
-attachGoogleSignInHandler();
-
-// Also try on DOMContentLoaded as fallback
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        console.log('📄 DOMContentLoaded - trying to attach Google sign-in handler');
-        attachGoogleSignInHandler();
-    });
-} else {
-    // DOM already loaded, try again after a short delay
-    setTimeout(() => {
-        attachGoogleSignInHandler();
-    }, 100);
+if (!attachGoogleSignInHandler()) {
+    // Also try on DOMContentLoaded as fallback
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('📄 DOMContentLoaded - trying to attach Google sign-in handler');
+            attachGoogleSignInHandler();
+        });
+    } else {
+        // DOM already loaded, try again after a short delay
+        setTimeout(() => {
+            attachGoogleSignInHandler();
+        }, 100);
+    }
 }
 
 // Start daily questions

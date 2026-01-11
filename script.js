@@ -90,14 +90,7 @@ const noContentScreen = document.getElementById('noContentScreen');
 const contentScreen = document.getElementById('contentScreen');
 const completionScreen = document.getElementById('completionScreen');
 
-const signInTab = document.getElementById('signInTab');
-const signUpTab = document.getElementById('signUpTab');
-const signInContent = document.getElementById('signInContent');
-const signUpContent = document.getElementById('signUpContent');
-const loginButton = document.getElementById('loginButton');
-const signupButton = document.getElementById('signupButton');
-const googleLoginButton = document.getElementById('googleLoginButton');
-const googleSignupButton = document.getElementById('googleSignupButton');
+const googleSignInButton = document.getElementById('googleSignInButton');
 const logoutButton = document.getElementById('logoutButton');
 const startQuestionsButton = document.getElementById('startQuestionsButton');
 const viewChallengesButton = document.getElementById('viewChallengesButton');
@@ -122,8 +115,6 @@ const quizQuestionText = document.getElementById('quizQuestionText');
 const quizOptions = document.getElementById('quizOptions');
 const quizNextButton = document.getElementById('quizNextButton');
 const quizExplanation = document.getElementById('quizExplanation');
-const authError = document.getElementById('authError');
-const signupError = document.getElementById('signupError');
 
 const questionContainer = document.querySelector('.question-container');
 
@@ -155,27 +146,7 @@ function showAuth() {
     // Reset all button loading states when showing auth screen
     resetAllButtonLoadingStates();
     // Clear errors when showing auth screen
-    const authError = document.getElementById('authError');
-    const signupError = document.getElementById('signupError');
     if (authError) authError.classList.add('hidden');
-    if (signupError) signupError.classList.add('hidden');
-}
-
-// Tab switching
-function switchTab(tabName) {
-    // Update tab buttons
-    signInTab.classList.toggle('active', tabName === 'signin');
-    signUpTab.classList.toggle('active', tabName === 'signup');
-    
-    // Update tab content
-    signInContent.classList.toggle('active', tabName === 'signin');
-    signUpContent.classList.toggle('active', tabName === 'signup');
-    
-    // Clear errors when switching tabs
-    const authError = document.getElementById('authError');
-    const signupError = document.getElementById('signupError');
-    if (authError) authError.classList.add('hidden');
-    if (signupError) signupError.classList.add('hidden');
 }
 
 function showLanding() {
@@ -240,10 +211,7 @@ function resetButton(button) {
 // Reset all button loading states
 function resetAllButtonLoadingStates() {
     // Reset authentication buttons
-    resetButton(loginButton);
-    resetButton(signupButton);
-    resetButton(googleLoginButton);
-    resetButton(googleSignupButton);
+    resetButton(googleSignInButton);
     resetButton(logoutButton);
     
     // Reset navigation buttons
@@ -273,152 +241,37 @@ function resetAllButtonLoadingStates() {
 
 
 // Authentication functions
-async function handleLogin() {
-    const email = document.getElementById('loginEmail').value.trim();
-    const password = document.getElementById('loginPassword').value;
-    
-    if (!email || !password) {
-        authError.textContent = 'Please enter email and password';
-        authError.classList.remove('hidden');
-        return;
-    }
-    
-    if (!auth) {
-        authError.textContent = 'Authentication not initialized. Please check Firebase configuration.';
-        authError.classList.remove('hidden');
-        return;
-    }
-    
-    // Hide previous errors and set loading state
-    authError.classList.add('hidden');
-    setButtonLoading(loginButton, true, 'Signing in...');
-    
-    try {
-        await auth.signInWithEmailAndPassword(email, password);
-        // Auth state listener will handle navigation
-    } catch (error) {
-        // Reset button on error
-        setButtonLoading(loginButton, false);
-        console.error('Login error:', error);
-        
-        let errorMessage = 'Failed to sign in';
-        
-        // Provide user-friendly error messages
-        if (error.code === 'auth/user-not-found') {
-            errorMessage = 'No account found with this email. Please sign up first.';
-        } else if (error.code === 'auth/wrong-password') {
-            errorMessage = 'Incorrect password. Please try again.';
-        } else if (error.code === 'auth/invalid-email') {
-            errorMessage = 'Invalid email address. Please check and try again.';
-        } else if (error.code === 'auth/user-disabled') {
-            errorMessage = 'This account has been disabled. Please contact support.';
-        } else if (error.code === 'auth/too-many-requests') {
-            errorMessage = 'Too many failed attempts. Please try again later.';
-        } else if (error.code === 'auth/operation-not-allowed') {
-            errorMessage = 'Email/Password authentication is not enabled. Please contact support.';
-        } else if (error.code === 'auth/network-request-failed') {
-            errorMessage = 'Network error. Please check your connection and try again.';
-        } else if (error.message) {
-            errorMessage = error.message;
-        }
-        
-        authError.textContent = errorMessage;
-        authError.classList.remove('hidden');
-    }
-}
-
-async function handleSignup() {
-    const email = document.getElementById('signupEmail').value.trim();
-    const password = document.getElementById('signupPassword').value;
-    
-    if (!email || !password) {
-        signupError.textContent = 'Please enter email and password';
-        signupError.classList.remove('hidden');
-        return;
-    }
-    
-    if (password.length < 6) {
-        signupError.textContent = 'Password must be at least 6 characters';
-        signupError.classList.remove('hidden');
-        return;
-    }
-    
-    if (!auth) {
-        signupError.textContent = 'Authentication not initialized. Please check Firebase configuration.';
-        signupError.classList.remove('hidden');
-        return;
-    }
-    
-    // Hide previous errors and set loading state
-    signupError.classList.add('hidden');
-    setButtonLoading(signupButton, true, 'Creating account...');
-    
-    try {
-        await auth.createUserWithEmailAndPassword(email, password);
-        // Auth state listener will handle navigation
-    } catch (error) {
-        // Reset button on error
-        setButtonLoading(signupButton, false);
-        console.error('Signup error:', error);
-        
-        let errorMessage = 'Failed to create account';
-        
-        // Provide user-friendly error messages
-        if (error.code === 'auth/email-already-in-use') {
-            errorMessage = 'An account with this email already exists. Please sign in instead.';
-        } else if (error.code === 'auth/invalid-email') {
-            errorMessage = 'Invalid email address. Please check and try again.';
-        } else if (error.code === 'auth/weak-password') {
-            errorMessage = 'Password is too weak. Please choose a stronger password.';
-        } else if (error.code === 'auth/operation-not-allowed') {
-            errorMessage = 'Email/Password authentication is not enabled. Please contact support.';
-        } else if (error.code === 'auth/network-request-failed') {
-            errorMessage = 'Network error. Please check your connection and try again.';
-        } else if (error.message) {
-            errorMessage = error.message;
-        }
-        
-        signupError.textContent = errorMessage;
-        signupError.classList.remove('hidden');
-    }
-}
-
-async function handleGoogleSignIn(isSignup = false) {
-    console.log('handleGoogleSignIn called, isSignup:', isSignup);
+async function handleGoogleSignIn() {
+    console.log('handleGoogleSignIn called');
     
     if (!auth) {
         const errorMsg = 'Authentication not initialized. Please check Firebase configuration.';
-        if (authError) authError.textContent = errorMsg;
-        if (authError) authError.classList.remove('hidden');
-        if (signupError) signupError.textContent = errorMsg;
-        if (signupError) signupError.classList.remove('hidden');
+        if (authError) {
+            authError.textContent = errorMsg;
+            authError.classList.remove('hidden');
+        }
         return;
     }
     
     // Check if Google provider is available
     if (typeof firebase === 'undefined' || typeof firebase.auth === 'undefined' || typeof firebase.auth.GoogleAuthProvider === 'undefined') {
         const errorMsg = 'Google Sign-In is not available. Please enable it in Firebase Console.';
-        const errorElement = isSignup ? signupError : authError;
-        if (errorElement) {
-            errorElement.textContent = errorMsg;
-            errorElement.classList.remove('hidden');
+        if (authError) {
+            authError.textContent = errorMsg;
+            authError.classList.remove('hidden');
         }
         console.error('GoogleAuthProvider not available');
         return;
     }
     
-    // Determine which button to show loading state for
-    const button = isSignup ? googleSignupButton : googleLoginButton;
-    const errorElement = isSignup ? signupError : authError;
-    
-    if (!button) {
-        console.error('Google sign-in button not found:', isSignup ? 'googleSignupButton' : 'googleLoginButton');
+    if (!googleSignInButton) {
+        console.error('Google sign-in button not found');
         return;
     }
     
     // Hide previous errors and set loading state
-    if (errorElement) errorElement.classList.add('hidden');
-    setButtonLoading(button, true);
+    if (authError) authError.classList.add('hidden');
+    setButtonLoading(googleSignInButton, true);
     
     const provider = new firebase.auth.GoogleAuthProvider();
     
@@ -433,7 +286,7 @@ async function handleGoogleSignIn(isSignup = false) {
         // Auth state listener will handle navigation
     } catch (error) {
         // Reset button on error
-        setButtonLoading(button, false);
+        setButtonLoading(googleSignInButton, false);
         console.error('Google sign-in error:', error);
         
         let errorMessage = 'Failed to sign in with Google';
@@ -451,17 +304,31 @@ async function handleGoogleSignIn(isSignup = false) {
             errorMessage = error.message;
         }
         
-        authError.textContent = errorMessage;
-        authError.classList.remove('hidden');
-        signupError.textContent = errorMessage;
-        signupError.classList.remove('hidden');
+        if (authError) {
+            authError.textContent = errorMessage;
+            authError.classList.remove('hidden');
+        }
     }
 }
 
 async function handleLogout() {
+    console.log('handleLogout called');
+    
+    if (!auth) {
+        console.error('Auth not initialized');
+        return;
+    }
+    
+    if (!logoutButton) {
+        console.error('Logout button not found');
+        return;
+    }
+    
     setButtonLoading(logoutButton, true, 'Signing out...');
     try {
+        console.log('Attempting to sign out...');
         await auth.signOut();
+        console.log('Sign out successful');
         // Auth state listener will handle navigation and reset button states
     } catch (error) {
         console.error('Logout error:', error);
@@ -986,48 +853,57 @@ function showChallengeCompletion() {
 }
 
 // Event listeners
-signInTab.addEventListener('click', () => switchTab('signin'));
-signUpTab.addEventListener('click', () => switchTab('signup'));
-loginButton.addEventListener('click', handleLogin);
-signupButton.addEventListener('click', handleSignup);
-logoutButton.addEventListener('click', handleLogout);
-
-// Google sign-in button handlers - ensure buttons exist before attaching listeners
-function attachGoogleSignInHandlers() {
-    const loginBtn = document.getElementById('googleLoginButton');
-    const signupBtn = document.getElementById('googleSignupButton');
-    
-    if (loginBtn) {
-        console.log('Google login button found, attaching event listener');
-        loginBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            console.log('Google login button clicked');
-            handleGoogleSignIn(false);
+// Logout button handler
+if (logoutButton) {
+    console.log('Logout button found, attaching event listener');
+    logoutButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        console.log('Logout button clicked');
+        handleLogout();
+    });
+} else {
+    console.error('logoutButton not found when attaching event listener');
+    // Try to attach after DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            const btn = document.getElementById('logoutButton');
+            if (btn) {
+                console.log('Logout button found on DOMContentLoaded, attaching event listener');
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    handleLogout();
+                });
+            } else {
+                console.error('logoutButton still not found after DOMContentLoaded');
+            }
         });
-    } else {
-        console.error('googleLoginButton not found');
-    }
-
-    if (signupBtn) {
-        console.log('Google signup button found, attaching event listener');
-        signupBtn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            console.log('Google signup button clicked');
-            handleGoogleSignIn(true);
-        });
-    } else {
-        console.error('googleSignupButton not found');
     }
 }
 
-// Attach handlers when DOM is ready
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', attachGoogleSignInHandlers);
+// Google sign-in button handler
+if (googleSignInButton) {
+    console.log('Google sign-in button found, attaching event listener');
+    googleSignInButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        console.log('Google sign-in button clicked');
+        handleGoogleSignIn();
+    });
 } else {
-    // DOM already loaded
-    attachGoogleSignInHandlers();
+    console.error('googleSignInButton not found');
+    // Try to attach after DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            const btn = document.getElementById('googleSignInButton');
+            if (btn) {
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleGoogleSignIn();
+                });
+            }
+        });
+    }
 }
 
 // Start daily questions

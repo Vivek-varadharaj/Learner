@@ -384,22 +384,26 @@ async function handleSignup() {
 }
 
 async function handleGoogleSignIn(isSignup = false) {
+    console.log('handleGoogleSignIn called, isSignup:', isSignup);
+    
     if (!auth) {
         const errorMsg = 'Authentication not initialized. Please check Firebase configuration.';
-        authError.textContent = errorMsg;
-        authError.classList.remove('hidden');
-        signupError.textContent = errorMsg;
-        signupError.classList.remove('hidden');
+        if (authError) authError.textContent = errorMsg;
+        if (authError) authError.classList.remove('hidden');
+        if (signupError) signupError.textContent = errorMsg;
+        if (signupError) signupError.classList.remove('hidden');
         return;
     }
     
     // Check if Google provider is available
-    if (typeof firebase.auth.GoogleAuthProvider === 'undefined') {
+    if (typeof firebase === 'undefined' || typeof firebase.auth === 'undefined' || typeof firebase.auth.GoogleAuthProvider === 'undefined') {
         const errorMsg = 'Google Sign-In is not available. Please enable it in Firebase Console.';
-        authError.textContent = errorMsg;
-        authError.classList.remove('hidden');
-        signupError.textContent = errorMsg;
-        signupError.classList.remove('hidden');
+        const errorElement = isSignup ? signupError : authError;
+        if (errorElement) {
+            errorElement.textContent = errorMsg;
+            errorElement.classList.remove('hidden');
+        }
+        console.error('GoogleAuthProvider not available');
         return;
     }
     
@@ -407,8 +411,13 @@ async function handleGoogleSignIn(isSignup = false) {
     const button = isSignup ? googleSignupButton : googleLoginButton;
     const errorElement = isSignup ? signupError : authError;
     
+    if (!button) {
+        console.error('Google sign-in button not found:', isSignup ? 'googleSignupButton' : 'googleLoginButton');
+        return;
+    }
+    
     // Hide previous errors and set loading state
-    errorElement.classList.add('hidden');
+    if (errorElement) errorElement.classList.add('hidden');
     setButtonLoading(button, true);
     
     const provider = new firebase.auth.GoogleAuthProvider();
@@ -418,7 +427,9 @@ async function handleGoogleSignIn(isSignup = false) {
     provider.addScope('email');
     
     try {
+        console.log('Attempting Google sign-in...');
         await auth.signInWithPopup(provider);
+        console.log('Google sign-in successful');
         // Auth state listener will handle navigation
     } catch (error) {
         // Reset button on error
@@ -981,12 +992,42 @@ loginButton.addEventListener('click', handleLogin);
 signupButton.addEventListener('click', handleSignup);
 logoutButton.addEventListener('click', handleLogout);
 
-// Google sign-in button handlers
-if (googleLoginButton) {
-    googleLoginButton.addEventListener('click', () => handleGoogleSignIn(false));
+// Google sign-in button handlers - ensure buttons exist before attaching listeners
+function attachGoogleSignInHandlers() {
+    const loginBtn = document.getElementById('googleLoginButton');
+    const signupBtn = document.getElementById('googleSignupButton');
+    
+    if (loginBtn) {
+        console.log('Google login button found, attaching event listener');
+        loginBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('Google login button clicked');
+            handleGoogleSignIn(false);
+        });
+    } else {
+        console.error('googleLoginButton not found');
+    }
+
+    if (signupBtn) {
+        console.log('Google signup button found, attaching event listener');
+        signupBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('Google signup button clicked');
+            handleGoogleSignIn(true);
+        });
+    } else {
+        console.error('googleSignupButton not found');
+    }
 }
-if (googleSignupButton) {
-    googleSignupButton.addEventListener('click', () => handleGoogleSignIn(true));
+
+// Attach handlers when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', attachGoogleSignInHandlers);
+} else {
+    // DOM already loaded
+    attachGoogleSignInHandlers();
 }
 
 // Start daily questions

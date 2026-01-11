@@ -1,291 +1,219 @@
-const surpriseButton = document.getElementById('surpriseButton');
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
 const message = document.getElementById('message');
-const smileRainContainer = document.getElementById('smileRainContainer');
-const sparklesContainer = document.getElementById('sparklesContainer');
-const imagesGrid = document.getElementById('imagesGrid');
-const backgroundMusic = document.getElementById('backgroundMusic');
+const rewardMessage = document.getElementById('rewardMessage');
+const smileIndicator = document.getElementById('smileIndicator');
 
-let animationStarted = false;
-const sparkles = ['✨', '⭐', '💫', '🌟'];
+let model = null;
+let isSmiling = false;
+let smileDetectionCount = 0;
+let lastRewardTime = 0;
+const SMILE_THRESHOLD = 0.02; // Threshold for smile detection
+const REQUIRED_SMILE_FRAMES = 20; // Number of consecutive frames needed to trigger reward
+const REWARD_COOLDOWN = 5000; // Minimum time between rewards (ms)
 
-// Background images for slideshow
-const backgroundImages = [
-    'WhatsApp Image 2026-01-05 at 1.07.12 AM.jpeg',
-    'WhatsApp Image 2026-01-05 at 1.07.12 AM (1).jpeg',
-    'WhatsApp Image 2026-01-05 at 1.07.12 AM (2).jpeg',
-    'WhatsApp Image 2026-01-05 at 1.07.12 AM (3).jpeg',
-    'WhatsApp Image 2026-01-05 at 1.07.12 AM (4).jpeg',
-    'WhatsApp Image 2026-01-05 at 1.07.12 AM (5).jpeg',
-    'WhatsApp Image 2026-01-05 at 1.07.12 AM (6).jpeg',
-    'WhatsApp Image 2026-01-05 at 1.07.12 AM (7).jpeg',
-    'WhatsApp Image 2026-01-05 at 1.07.12 AM (8).jpeg'
-];
-
-let currentImageIndex = 0;
-let slideshowInterval = null;
-
-// Initialize background image
-function initializeBackgroundImage() {
-    // Create two image layers for crossfading
-    const img1 = document.createElement('img');
-    img1.src = backgroundImages[0];
-    img1.alt = 'Background';
-    img1.className = 'background-image background-image-1';
-    img1.loading = 'eager';
-    imagesGrid.appendChild(img1);
-    
-    const img2 = document.createElement('img');
-    img2.src = backgroundImages[0];
-    img2.alt = 'Background';
-    img2.className = 'background-image background-image-2';
-    img2.style.opacity = '0';
-    img2.style.visibility = 'visible'; // Visible but transparent
-    imagesGrid.appendChild(img2);
-    
-    // Preload all images for smooth transitions
-    backgroundImages.forEach((src) => {
-        const preloadImg = new Image();
-        preloadImg.src = src;
-    });
+// Initialize camera
+async function initCamera() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+                facingMode: 'user',
+                width: { ideal: 1280 },
+                height: { ideal: 720 }
+            }
+        });
+        video.srcObject = stream;
+        
+        video.addEventListener('loadedmetadata', async () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            await loadModel();
+            if (model) {
+                detectFaces();
+            }
+        });
+    } catch (error) {
+        console.error('Error accessing camera:', error);
+        message.innerHTML = `
+            <h1>Camera Access Required</h1>
+            <p>Please allow camera access to continue...</p>
+        `;
+    }
 }
 
-// Start slideshow
-function startSlideshow() {
-    const img1 = imagesGrid.querySelector('.background-image-1');
-    const img2 = imagesGrid.querySelector('.background-image-2');
-    
-    if (!img1 || !img2) {
-        console.log('Background images not found');
+// Load TensorFlow.js face detection model
+async function loadModel() {
+    try {
+        // Check if library is loaded - it might be faceLandmarksDetection or window.faceLandmarksDetection
+        const faceLandmarksDetectionLib = window.faceLandmarksDetection || faceLandmarksDetection;
+        if (!faceLandmarksDetectionLib) {
+            throw new Error('Face landmarks detection library not loaded');
+        }
+        
+        // Version 1.0.6 uses createDetector instead of load
+        const modelType = faceLandmarksDetectionLib.SupportedModels.MediaPipeFaceMesh;
+        const detectorConfig = {
+            runtime: 'mediapipe',
+            solutionPath: 'https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4.1633559619',
+            maxFaces: 1,
+            refineLandmarks: true,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        };
+        
+        model = await faceLandmarksDetectionLib.createDetector(modelType, detectorConfig);
+        console.log('Model loaded successfully');
+        message.innerHTML = `
+            <h1>Hey Shuttumani</h1>
+            <p>Show me your beautiful smile...</p>
+        `;
+    } catch (error) {
+        console.error('Error loading model:', error);
+        message.innerHTML = `
+            <h1>Error Loading Face Detection</h1>
+            <p>Error: ${error.message}</p>
+            <p>Please refresh the page...</p>
+        `;
+    }
+}
+
+// Detect faces and smiles
+async function detectFaces() {
+    if (!model || video.readyState !== video.HAVE_ENOUGH_DATA) {
+        requestAnimationFrame(detectFaces);
         return;
     }
     
-    let currentImg = img1;
-    let nextImg = img2;
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Wait for initial fade-in animation to complete
-    setTimeout(() => {
-        img1.classList.add('slideshow-active');
-        img2.classList.add('slideshow-active');
-        
-        // Ensure img1 is fully visible before starting
-        img1.style.opacity = '1';
-        img2.style.opacity = '0';
-        
-        // Preload and set second image BEFORE starting slideshow
-        currentImageIndex = 0;
-        const secondImageSrc = backgroundImages[1];
-        
-        // Preload second image
-        const preloadImg2 = new Image();
-        preloadImg2.onload = () => {
-            // Handler for when image is ready
-            const handleImageReady = () => {
-                // Wait for image to be fully rendered (2 frames)
-                requestAnimationFrame(() => {
-                    requestAnimationFrame(() => {
-                        // Image is fully loaded and rendered, now start slideshow
-                        startSlideshowInterval();
-                    });
-                });
-            };
-            
-            // Set onload handler BEFORE changing src
-            nextImg.onload = handleImageReady;
-            nextImg.src = secondImageSrc;
-            
-            // If image is already cached, onload might not fire
-            if (nextImg.complete && nextImg.naturalWidth > 0) {
-                handleImageReady();
-            }
-        };
-        preloadImg2.src = secondImageSrc;
-        
-        function startSlideshowInterval() {
-            // Start the interval for subsequent transitions
-            slideshowInterval = setInterval(() => {
-                currentImageIndex = (currentImageIndex + 1) % backgroundImages.length;
-                const nextImageSrc = backgroundImages[currentImageIndex];
-                
-                // Preload next image
-                const preloadNext = new Image();
-                preloadNext.onload = () => {
-                    // Handler for when image is ready
-                    const doCrossfade = () => {
-                        requestAnimationFrame(() => {
-                            requestAnimationFrame(() => {
-                                // Both images ready, do crossfade
-                                currentImg.style.opacity = '0';
-                                nextImg.style.opacity = '1';
-                                
-                                // Swap references
-                                const temp = currentImg;
-                                currentImg = nextImg;
-                                nextImg = temp;
-                            });
-                        });
-                    };
-                    
-                    // Set onload handler BEFORE changing src
-                    nextImg.onload = doCrossfade;
-                    nextImg.src = nextImageSrc;
-                    
-                    // If image is already cached, onload might not fire
-                    if (nextImg.complete && nextImg.naturalWidth > 0) {
-                        doCrossfade();
-                    }
-                };
-                preloadNext.src = nextImageSrc;
-            }, 3000);
-            
-            // Trigger first transition after 3 seconds
-            setTimeout(() => {
-                currentImageIndex = 1;
-                // First crossfade (img1 -> img2) - image is already loaded
-                currentImg.style.opacity = '0';
-                nextImg.style.opacity = '1';
-                
-                const temp = currentImg;
-                currentImg = nextImg;
-                nextImg = temp;
-            }, 3000);
-        }
-    }, 1500); // Wait for initial animation to complete
-}
-
-// Initialize background on page load
-initializeBackgroundImage();
-
-surpriseButton.addEventListener('click', function() {
-    if (animationStarted) return;
-    
-    animationStarted = true;
-    
-    // Start background music
-    if (backgroundMusic) {
-        backgroundMusic.volume = 0.5; // Set volume to 50%
-        backgroundMusic.play().catch(error => {
-            console.log('Audio play failed:', error);
-            // Audio autoplay may be blocked by browser, user interaction is needed
+    try {
+        const predictions = await model.estimateFaces(video, {
+            flipHorizontal: false
         });
+        
+        if (predictions.length > 0) {
+            const prediction = predictions[0];
+            // MediaPipe FaceMesh returns keypoints with x, y, z properties
+            const keypoints = prediction.keypoints || prediction.scaledMesh || [];
+            const keypointsArray = keypoints.map(kp => Array.isArray(kp) ? kp : [kp.x, kp.y]);
+            
+            if (keypointsArray && keypointsArray.length >= 468) {
+                const isSmilingDetected = detectSmile(keypointsArray);
+                
+                if (isSmilingDetected) {
+                    smileDetectionCount++;
+                    if (smileDetectionCount >= REQUIRED_SMILE_FRAMES && !isSmiling) {
+                        const now = Date.now();
+                        if (now - lastRewardTime > REWARD_COOLDOWN) {
+                            triggerReward();
+                            lastRewardTime = now;
+                        }
+                    }
+                } else {
+                    smileDetectionCount = Math.max(0, smileDetectionCount - 1);
+                }
+            }
+        } else {
+            smileDetectionCount = Math.max(0, smileDetectionCount - 1);
+        }
+    } catch (error) {
+        console.error('Detection error:', error);
     }
     
-    // Show background image
-    imagesGrid.classList.add('active');
+    requestAnimationFrame(detectFaces);
+}
+
+// Detect smile using facial landmarks
+function detectSmile(keypoints) {
+    // MediaPipe Face Mesh landmarks for mouth
+    // Left corner: 61, Right corner: 291
+    // Top lip center: 13, Bottom lip center: 14
     
-    // Start slideshow
-    startSlideshow();
+    const leftCorner = keypoints[61];
+    const rightCorner = keypoints[291];
+    const topLipCenter = keypoints[13];
+    const bottomLipCenter = keypoints[14];
     
-    // Create sparkles on button click
-    createButtonSparkles();
+    if (!leftCorner || !rightCorner || !topLipCenter || !bottomLipCenter) {
+        return false;
+    }
     
-    // Hide the button with animation
-    surpriseButton.style.transform = 'scale(0)';
-    surpriseButton.style.opacity = '0';
+    // Calculate mouth width
+    const mouthWidth = Math.sqrt(
+        Math.pow(rightCorner[0] - leftCorner[0], 2) +
+        Math.pow(rightCorner[1] - leftCorner[1], 2)
+    );
+    
+    // Calculate average Y position of mouth corners
+    const avgCornerY = (leftCorner[1] + rightCorner[1]) / 2;
+    
+    // Calculate center Y position of mouth
+    const centerY = (topLipCenter[1] + bottomLipCenter[1]) / 2;
+    
+    // Calculate mouth opening
+    const mouthOpening = Math.abs(topLipCenter[1] - bottomLipCenter[1]);
+    
+    // Smile detection: corners should be higher than center (lower Y value = higher position)
+    // For a smile, corners should be HIGHER, which means LOWER Y values
+    // So we want: centerY > avgCornerY (center is lower than corners = corners are higher)
+    const smileRatio = (centerY - avgCornerY) / (mouthWidth + 0.001);
+    
+    // Normalize mouth opening
+    const normalizedOpening = mouthOpening / (mouthWidth + 0.001);
+    
+    // Smile detected if corners are higher and mouth opening is reasonable
+    return smileRatio > SMILE_THRESHOLD && normalizedOpening < 0.5;
+}
+
+// Trigger reward message
+function triggerReward() {
+    isSmiling = true;
+    rewardMessage.classList.add('active');
+    smileIndicator.classList.add('active');
+    
+    // Hide reward after 4 seconds
     setTimeout(() => {
-        surpriseButton.style.display = 'none';
-    }, 300);
-    
-    // Start smile rain animation and reveal text
+        rewardMessage.classList.remove('active');
+        
+        // Reset after a delay
+        setTimeout(() => {
+            isSmiling = false;
+            smileDetectionCount = 0;
+            
+            // Keep indicator visible for a bit longer, then fade
+            setTimeout(() => {
+                if (smileDetectionCount < REQUIRED_SMILE_FRAMES) {
+                    smileIndicator.classList.remove('active');
+                }
+            }, 2000);
+        }, 500);
+    }, 4000);
+}
+
+// Initialize everything when page loads
+window.addEventListener('load', () => {
+    // Wait for TensorFlow.js to load
     setTimeout(() => {
-        startSmileRain();
+        if (typeof window.faceLandmarksDetection !== 'undefined' || typeof faceLandmarksDetection !== 'undefined') {
+            initCamera();
+        } else {
+            message.innerHTML = `
+                <h1>Loading Face Detection Library...</h1>
+                <p>Please wait...</p>
+            `;
+            // Try again after a delay
+            setTimeout(() => {
+                if (typeof window.faceLandmarksDetection !== 'undefined' || typeof faceLandmarksDetection !== 'undefined') {
+                    initCamera();
+                } else {
+                    message.innerHTML = `
+                        <h1>Error: Library Not Found</h1>
+                        <p>Please check your internet connection and refresh...</p>
+                    `;
+                }
+            }, 2000);
+        }
     }, 500);
 });
-
-function createButtonSparkles() {
-    // Create sparkles around the button
-    for (let i = 0; i < 12; i++) {
-        setTimeout(() => {
-            const sparkle = document.createElement('div');
-            sparkle.className = 'sparkle';
-            sparkle.textContent = sparkles[Math.floor(Math.random() * sparkles.length)];
-            
-            const angle = (i / 12) * Math.PI * 2;
-            const distance = 80;
-            const startX = surpriseButton.offsetLeft + surpriseButton.offsetWidth / 2;
-            const startY = surpriseButton.offsetTop + surpriseButton.offsetHeight / 2;
-            
-            sparkle.style.left = startX + 'px';
-            sparkle.style.top = startY + 'px';
-            sparkle.style.animationDelay = (i * 0.05) + 's';
-            
-            sparklesContainer.appendChild(sparkle);
-            
-            // Remove sparkle after animation
-            setTimeout(() => {
-                if (sparkle.parentNode) {
-                    sparkle.parentNode.removeChild(sparkle);
-                }
-            }, 3000);
-        }, i * 50);
-    }
-}
-
-function startSmileRain() {
-    // Array of smile variations (text and emoji)
-    const smileVariations = ['Smile', '😊', '😄', '😃', '☺️', '🙂', '😁'];
-    
-    // Create "Smile" text and emoji falling like rain
-    const createSmileRain = () => {
-        const smileElement = document.createElement('div');
-        smileElement.className = 'smile-rain';
-        
-        // Randomly choose between text or emoji
-        const randomVariation = smileVariations[Math.floor(Math.random() * smileVariations.length)];
-        smileElement.textContent = randomVariation;
-        
-        // Random horizontal position
-        const leftPosition = Math.random() * 100;
-        smileElement.style.left = leftPosition + '%';
-        
-        // Random animation duration (3-6 seconds for varied speeds)
-        const duration = 3 + Math.random() * 3;
-        smileElement.style.animationDuration = duration + 's';
-        
-        // Random delay (0-2 seconds for staggered effect)
-        const delay = Math.random() * 2;
-        smileElement.style.animationDelay = delay + 's';
-        
-        // Random font size for variety (smaller for emojis)
-        const isEmoji = randomVariation.length === 1 || randomVariation.length === 2;
-        const fontSize = isEmoji ? (30 + Math.random() * 20) : (24 + Math.random() * 16);
-        smileElement.style.fontSize = fontSize + 'px';
-        
-        // Random opacity
-        const opacity = 0.6 + Math.random() * 0.4;
-        smileElement.style.opacity = opacity;
-        
-        smileRainContainer.appendChild(smileElement);
-        
-        // Remove smile element after animation completes
-        setTimeout(() => {
-            if (smileElement.parentNode) {
-                smileElement.parentNode.removeChild(smileElement);
-            }
-        }, (duration + delay) * 1000);
-    };
-    
-    // Create initial burst of "Smile" rain
-    for (let i = 0; i < 40; i++) {
-        setTimeout(() => createSmileRain(), i * 100);
-    }
-    
-    // Continue creating smile rain for 8 seconds
-    const smileInterval = setInterval(() => {
-        createSmileRain();
-    }, 150);
-    
-    // Stop creating new smiles after 8 seconds, but let existing ones finish
-    setTimeout(() => {
-        clearInterval(smileInterval);
-    }, 8000);
-    
-    // Reveal text progressively as smile rain falls
-    const textRevealDelay = 2000; // Start revealing text after 2 seconds
-    
-    setTimeout(() => {
-        message.innerHTML = `
-            <h1 class="text-reveal">Arike thanna munthiri..<br>Punjiriku yen sundhari...</h1>
-        `;
-        message.classList.add('updated');
-    }, textRevealDelay);
-}

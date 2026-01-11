@@ -11,10 +11,38 @@ This app now uses Firebase Authentication for user-specific question tracking.
 3. Go to **Build** > **Authentication**
 4. Click **Get started** (if not already enabled)
 5. Go to **Sign-in method** tab
-6. Enable **Email/Password**:
+
+#### Enable Email/Password:
    - Click on "Email/Password"
    - Toggle "Enable" to ON
    - Click "Save"
+
+#### Enable Google Sign-In:
+   - Click on "Google"
+   - Toggle "Enable" to ON
+   - Set your project support email (required)
+   - Click "Save"
+
+**Important:** After enabling Google Sign-In, you may need to:
+1. **Configure OAuth Consent Screen** (if not already done):
+   - Go to [Google Cloud Console](https://console.cloud.google.com/)
+   - Select your Firebase project
+   - Go to **APIs & Services** > **OAuth consent screen**
+   - Complete the consent screen setup (User Type, App name, Support email, etc.)
+   - Add your domain to authorized domains if needed
+   - Save and continue
+
+2. **Add Authorized Domains** (if testing locally):
+   - In Firebase Console > Authentication > Settings > Authorized domains
+   - Add `localhost` if testing locally
+   - Add your production domain when deploying
+
+**Troubleshooting `auth/invalid-credential` error:**
+- Make sure Google Sign-In is enabled in Firebase Console
+- Verify OAuth consent screen is configured in Google Cloud Console
+- Check that your project support email is set
+- Try clearing browser cache and cookies
+- Make sure you're using the correct Firebase project
 
 ### Step 2: Update Firestore Security Rules
 

@@ -31,7 +31,7 @@ function initializeFirebase() {
                 showLanding();
             } else {
                 console.log('User signed out');
-                showLogin();
+                showAuth();
             }
         });
     } catch (error) {
@@ -48,35 +48,57 @@ if (document.readyState === 'loading') {
 }
 
 // State management
-let currentQuestions = [];
-let currentQuestionIndex = 0;
+// For daily questions (tap-to-reveal)
 let selectedQuestions = [];
+let currentQuestionIndex = 0;
+let isDailyQuestionsMode = false;
+
+// For challenges (multiple choice quiz)
+let currentChallenge = null;
+let currentChallengeQuestions = [];
+let currentQuizQuestionIndex = 0;
+let selectedQuizAnswer = null;
+let quizScore = 0;
 
 // DOM elements
-const loginScreen = document.getElementById('loginScreen');
-const signupScreen = document.getElementById('signupScreen');
+const authScreen = document.getElementById('authScreen');
 const landingScreen = document.getElementById('landingScreen');
+const challengesScreen = document.getElementById('challengesScreen');
+const quizScreen = document.getElementById('quizScreen');
 const loadingScreen = document.getElementById('loadingScreen');
 const noContentScreen = document.getElementById('noContentScreen');
 const contentScreen = document.getElementById('contentScreen');
 const completionScreen = document.getElementById('completionScreen');
-const prizeScreen = document.getElementById('prizeScreen');
 
+const signInTab = document.getElementById('signInTab');
+const signUpTab = document.getElementById('signUpTab');
+const signInContent = document.getElementById('signInContent');
+const signUpContent = document.getElementById('signUpContent');
 const loginButton = document.getElementById('loginButton');
 const signupButton = document.getElementById('signupButton');
-const showSignupButton = document.getElementById('showSignupButton');
-const showLoginButton = document.getElementById('showLoginButton');
+const googleLoginButton = document.getElementById('googleLoginButton');
+const googleSignupButton = document.getElementById('googleSignupButton');
 const logoutButton = document.getElementById('logoutButton');
-const startButton = document.getElementById('startButton');
+const startQuestionsButton = document.getElementById('startQuestionsButton');
+const viewChallengesButton = document.getElementById('viewChallengesButton');
+const backToLandingFromChallenges = document.getElementById('backToLandingFromChallenges');
+const challengesList = document.getElementById('challengesList');
+const viewMoreChallengesButton = document.getElementById('viewMoreChallengesButton');
 const backToLandingButton1 = document.getElementById('backToLandingButton1');
 const backToLandingButton2 = document.getElementById('backToLandingButton2');
-const backToLandingButton4 = document.getElementById('backToLandingButton4');
+const shareScreenshotButton = document.getElementById('shareScreenshotButton');
+const completionContent = document.getElementById('completionContent');
 const progressText = document.getElementById('progressText');
 const questionText = document.getElementById('questionText');
 const answerText = document.getElementById('answerText');
 const answerContainer = document.getElementById('answerContainer');
 const answerOverlay = document.getElementById('answerOverlay');
 const nextButton = document.getElementById('nextButton');
+const quizProgressText = document.getElementById('quizProgressText');
+const quizQuestionText = document.getElementById('quizQuestionText');
+const quizOptions = document.getElementById('quizOptions');
+const quizNextButton = document.getElementById('quizNextButton');
+const quizExplanation = document.getElementById('quizExplanation');
 const authError = document.getElementById('authError');
 const signupError = document.getElementById('signupError');
 
@@ -84,31 +106,56 @@ const questionContainer = document.querySelector('.question-container');
 
 // Screen management
 function hideAllScreens() {
-    loginScreen.classList.add('hidden');
-    signupScreen.classList.add('hidden');
+    authScreen.classList.add('hidden');
     landingScreen.classList.add('hidden');
+    challengesScreen.classList.add('hidden');
     loadingScreen.classList.add('hidden');
     noContentScreen.classList.add('hidden');
     contentScreen.classList.add('hidden');
     completionScreen.classList.add('hidden');
-    prizeScreen.classList.add('hidden');
+    if (quizScreen) quizScreen.classList.add('hidden');
 }
 
-function showLogin() {
+function showChallenges() {
     hideAllScreens();
-    loginScreen.classList.remove('hidden');
-    authError.classList.add('hidden');
+    challengesScreen.classList.remove('hidden');
 }
 
-function showSignup() {
+function showQuiz() {
     hideAllScreens();
-    signupScreen.classList.remove('hidden');
-    signupError.classList.add('hidden');
+    quizScreen.classList.remove('hidden');
+}
+
+function showAuth() {
+    hideAllScreens();
+    authScreen.classList.remove('hidden');
+    // Clear errors when showing auth screen
+    const authError = document.getElementById('authError');
+    const signupError = document.getElementById('signupError');
+    if (authError) authError.classList.add('hidden');
+    if (signupError) signupError.classList.add('hidden');
+}
+
+// Tab switching
+function switchTab(tabName) {
+    // Update tab buttons
+    signInTab.classList.toggle('active', tabName === 'signin');
+    signUpTab.classList.toggle('active', tabName === 'signup');
+    
+    // Update tab content
+    signInContent.classList.toggle('active', tabName === 'signin');
+    signUpContent.classList.toggle('active', tabName === 'signup');
+    
+    // Clear errors when switching tabs
+    const authError = document.getElementById('authError');
+    const signupError = document.getElementById('signupError');
+    if (authError) authError.classList.add('hidden');
+    if (signupError) signupError.classList.add('hidden');
 }
 
 function showLanding() {
     if (!currentUser) {
-        showLogin();
+        showAuth();
         return;
     }
     hideAllScreens();
@@ -120,9 +167,12 @@ function showLoading() {
     loadingScreen.classList.remove('hidden');
 }
 
-function showNoContent() {
+function showNoContent(message = 'No content available at the moment.') {
     hideAllScreens();
     noContentScreen.classList.remove('hidden');
+    if (noContentMessage) {
+        noContentMessage.textContent = message;
+    }
 }
 
 function showContent() {
@@ -131,18 +181,16 @@ function showContent() {
 }
 
 function showCompletion() {
-    hideAllScreens();
-    completionScreen.classList.remove('hidden');
+    // This function is kept for backward compatibility but should not be used directly
+    // Use showDailyQuestionsCompletion() or showChallengeCompletion() instead
+    showDailyQuestionsCompletion();
 }
 
-function showPrize() {
-    hideAllScreens();
-    prizeScreen.classList.remove('hidden');
-}
+
 
 // Authentication functions
 async function handleLogin() {
-    const email = document.getElementById('loginEmail').value;
+    const email = document.getElementById('loginEmail').value.trim();
     const password = document.getElementById('loginPassword').value;
     
     if (!email || !password) {
@@ -151,17 +199,46 @@ async function handleLogin() {
         return;
     }
     
+    if (!auth) {
+        authError.textContent = 'Authentication not initialized. Please check Firebase configuration.';
+        authError.classList.remove('hidden');
+        return;
+    }
+    
     try {
         await auth.signInWithEmailAndPassword(email, password);
         // Auth state listener will handle navigation
     } catch (error) {
-        authError.textContent = error.message;
+        console.error('Login error:', error);
+        
+        let errorMessage = 'Failed to sign in';
+        
+        // Provide user-friendly error messages
+        if (error.code === 'auth/user-not-found') {
+            errorMessage = 'No account found with this email. Please sign up first.';
+        } else if (error.code === 'auth/wrong-password') {
+            errorMessage = 'Incorrect password. Please try again.';
+        } else if (error.code === 'auth/invalid-email') {
+            errorMessage = 'Invalid email address. Please check and try again.';
+        } else if (error.code === 'auth/user-disabled') {
+            errorMessage = 'This account has been disabled. Please contact support.';
+        } else if (error.code === 'auth/too-many-requests') {
+            errorMessage = 'Too many failed attempts. Please try again later.';
+        } else if (error.code === 'auth/operation-not-allowed') {
+            errorMessage = 'Email/Password authentication is not enabled. Please contact support.';
+        } else if (error.code === 'auth/network-request-failed') {
+            errorMessage = 'Network error. Please check your connection and try again.';
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        authError.textContent = errorMessage;
         authError.classList.remove('hidden');
     }
 }
 
 async function handleSignup() {
-    const email = document.getElementById('signupEmail').value;
+    const email = document.getElementById('signupEmail').value.trim();
     const password = document.getElementById('signupPassword').value;
     
     if (!email || !password) {
@@ -176,11 +253,90 @@ async function handleSignup() {
         return;
     }
     
+    if (!auth) {
+        signupError.textContent = 'Authentication not initialized. Please check Firebase configuration.';
+        signupError.classList.remove('hidden');
+        return;
+    }
+    
     try {
         await auth.createUserWithEmailAndPassword(email, password);
         // Auth state listener will handle navigation
     } catch (error) {
-        signupError.textContent = error.message;
+        console.error('Signup error:', error);
+        
+        let errorMessage = 'Failed to create account';
+        
+        // Provide user-friendly error messages
+        if (error.code === 'auth/email-already-in-use') {
+            errorMessage = 'An account with this email already exists. Please sign in instead.';
+        } else if (error.code === 'auth/invalid-email') {
+            errorMessage = 'Invalid email address. Please check and try again.';
+        } else if (error.code === 'auth/weak-password') {
+            errorMessage = 'Password is too weak. Please choose a stronger password.';
+        } else if (error.code === 'auth/operation-not-allowed') {
+            errorMessage = 'Email/Password authentication is not enabled. Please contact support.';
+        } else if (error.code === 'auth/network-request-failed') {
+            errorMessage = 'Network error. Please check your connection and try again.';
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        signupError.textContent = errorMessage;
+        signupError.classList.remove('hidden');
+    }
+}
+
+async function handleGoogleSignIn() {
+    if (!auth) {
+        const errorMsg = 'Authentication not initialized. Please check Firebase configuration.';
+        authError.textContent = errorMsg;
+        authError.classList.remove('hidden');
+        signupError.textContent = errorMsg;
+        signupError.classList.remove('hidden');
+        return;
+    }
+    
+    // Check if Google provider is available
+    if (typeof firebase.auth.GoogleAuthProvider === 'undefined') {
+        const errorMsg = 'Google Sign-In is not available. Please enable it in Firebase Console.';
+        authError.textContent = errorMsg;
+        authError.classList.remove('hidden');
+        signupError.textContent = errorMsg;
+        signupError.classList.remove('hidden');
+        return;
+    }
+    
+    const provider = new firebase.auth.GoogleAuthProvider();
+    
+    // Add scopes if needed
+    provider.addScope('profile');
+    provider.addScope('email');
+    
+    try {
+        await auth.signInWithPopup(provider);
+        // Auth state listener will handle navigation
+    } catch (error) {
+        console.error('Google sign-in error:', error);
+        
+        let errorMessage = 'Failed to sign in with Google';
+        
+        // Provide more specific error messages
+        if (error.code === 'auth/popup-closed-by-user') {
+            errorMessage = 'Sign-in was cancelled. Please try again.';
+        } else if (error.code === 'auth/popup-blocked') {
+            errorMessage = 'Popup was blocked. Please allow popups and try again.';
+        } else if (error.code === 'auth/invalid-credential') {
+            errorMessage = 'Google Sign-In is not properly configured. Please check Firebase Console settings.';
+        } else if (error.code === 'auth/operation-not-allowed') {
+            errorMessage = 'Google Sign-In is not enabled. Please enable it in Firebase Console.';
+        } else if (error.message) {
+            errorMessage = error.message;
+        }
+        
+        authError.textContent = errorMessage;
+        authError.classList.remove('hidden');
+        signupError.textContent = errorMessage;
         signupError.classList.remove('hidden');
     }
 }
@@ -194,124 +350,109 @@ async function handleLogout() {
     }
 }
 
-// Firebase - Get user's completed questions
-async function getUserCompletedQuestions() {
-    if (!db || !currentUser) {
-        return [];
-    }
-    
-    try {
-        const userCompletionsRef = db.collection('userCompletions').doc(currentUser.uid);
-        const doc = await userCompletionsRef.get();
-        
-        if (doc.exists) {
-            const data = doc.data();
-            return data.completedQuestionIds || [];
-        }
-        return [];
-    } catch (error) {
-        console.error('Error fetching user completions:', error);
-        return [];
-    }
-}
-
-// Firebase - Mark question as completed for user
-async function markQuestionCompleted(questionId) {
-    if (!db || !currentUser) {
-        return;
-    }
-    
-    try {
-        const userCompletionsRef = db.collection('userCompletions').doc(currentUser.uid);
-        const doc = await userCompletionsRef.get();
-        
-        if (doc.exists) {
-            const data = doc.data();
-            const completedIds = data.completedQuestionIds || [];
-            if (!completedIds.includes(questionId)) {
-                completedIds.push(questionId);
-                await userCompletionsRef.update({
-                    completedQuestionIds: completedIds,
-                    completedCount: firebase.firestore.FieldValue.increment(1),
-                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
-                });
-            }
-        } else {
-            await userCompletionsRef.set({
-                userId: currentUser.uid,
-                email: currentUser.email,
-                completedQuestionIds: [questionId],
-                completedCount: 1,
-                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
-            });
-        }
-        
-        console.log('Question marked as completed for user');
-    } catch (error) {
-        console.error('Error marking question completed:', error);
-    }
-}
-
-// Firebase - Get user completion count
-async function getUserCompletionCount() {
-    if (!db || !currentUser) {
-        return 0;
-    }
-    
-    try {
-        const userCompletionsRef = db.collection('userCompletions').doc(currentUser.uid);
-        const doc = await userCompletionsRef.get();
-        
-        if (doc.exists) {
-            const data = doc.data();
-            return data.completedCount || 0;
-        }
-        return 0;
-    } catch (error) {
-        console.error('Error fetching completion count:', error);
-        return 0;
-    }
-}
-
-// Firebase - Fetch questions
-async function fetchQuestionsFromFirebase() {
+// Firebase - Fetch all challenges
+async function fetchChallengesFromFirebase() {
     if (!db) {
         throw new Error('Firebase not initialized. Please configure Firebase.');
     }
     
     try {
-        const questionsSnapshot = await db.collection('questions').get();
-        const questions = [];
+        const challengesSnapshot = await db.collection('challenges').get();
+        const challenges = [];
         
-        questionsSnapshot.forEach(doc => {
+        challengesSnapshot.forEach(doc => {
             const data = doc.data();
-            questions.push({
+            challenges.push({
                 id: doc.id,
-                date: data.date,
-                question: data.question,
-                answer: data.answer
+                challengeId: data.challengeId || doc.id,
+                title: data.title,
+                description: data.description || '',
+                questions: data.questions || [],
+                difficulty: data.difficulty || 'beginner',
+                estimatedTime: data.estimatedTime || 0
             });
         });
         
-        return questions;
+        return challenges;
     } catch (error) {
-        console.error('Error fetching questions from Firebase:', error);
+        console.error('Error fetching challenges from Firebase:', error);
         throw error;
     }
 }
 
-// Filter questions - exclude completed ones for current user
-async function getAvailableQuestions(questions) {
+// Firebase - Get user's completed challenges
+async function getUserCompletedChallenges() {
+    if (!db || !currentUser) {
+        return [];
+    }
+    
+    try {
+        const userChallengesRef = db.collection('userChallenges').doc(currentUser.uid);
+        const doc = await userChallengesRef.get();
+        
+        if (doc.exists) {
+            const data = doc.data();
+            return data.completedChallengeIds || [];
+        }
+        return [];
+    } catch (error) {
+        console.error('Error fetching user challenges:', error);
+        return [];
+    }
+}
+
+// Firebase - Mark challenge as completed
+async function markChallengeCompleted(challengeId) {
+    if (!db || !currentUser) {
+        return;
+    }
+    
+    try {
+        const userChallengesRef = db.collection('userChallenges').doc(currentUser.uid);
+        const doc = await userChallengesRef.get();
+        
+        if (doc.exists) {
+            const data = doc.data();
+            const completedIds = data.completedChallengeIds || [];
+            if (!completedIds.includes(challengeId)) {
+                await userChallengesRef.update({
+                    completedChallengeIds: firebase.firestore.FieldValue.arrayUnion(challengeId),
+                    completedCount: firebase.firestore.FieldValue.increment(1),
+                    currentChallengeId: null,
+                    currentQuestionIndex: 0,
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }
+        } else {
+            await userChallengesRef.set({
+                userId: currentUser.uid,
+                email: currentUser.email,
+                completedChallengeIds: [challengeId],
+                completedCount: 1,
+                currentChallengeId: null,
+                currentQuestionIndex: 0,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+        
+        console.log('Challenge marked as completed:', challengeId);
+    } catch (error) {
+        console.error('Error marking challenge as completed:', error);
+    }
+}
+
+// Filter challenges - exclude completed ones for current user
+async function getAvailableChallenges(challenges) {
     if (!currentUser) {
         return [];
     }
     
-    const completedIds = await getUserCompletedQuestions();
-    return questions.filter(q => !completedIds.includes(q.id));
+    const completedIds = await getUserCompletedChallenges();
+    return challenges.filter(c => !completedIds.includes(c.challengeId));
 }
 
-// Content rendering
+// Content rendering (for daily questions)
 function renderQuestion() {
     if (!selectedQuestions || selectedQuestions.length === 0 || currentQuestionIndex >= selectedQuestions.length) {
         console.error('No question available at index:', currentQuestionIndex);
@@ -367,7 +508,7 @@ function revealAnswer() {
     }, 300);
 }
 
-// Handle next question
+// Handle next question (for daily questions)
 async function handleNext() {
     const currentQuestion = selectedQuestions[currentQuestionIndex];
     
@@ -380,34 +521,320 @@ async function handleNext() {
     
     if (currentQuestionIndex >= selectedQuestions.length) {
         // All questions completed
-        await handleAllQuestionsCompleted();
+        showDailyQuestionsCompletion();
     } else {
         // Render next question
         renderQuestion();
     }
 }
 
-async function handleAllQuestionsCompleted() {
-    const completionCount = await getUserCompletionCount();
+// Render challenges list
+function renderChallenges(challenges) {
+    challengesList.innerHTML = '';
     
-    // Check if user reached 25 completions
-    if (completionCount >= 25) {
-        showPrize();
+    if (challenges.length === 0) {
+        challengesList.innerHTML = '<p class="message-text">No challenges available.</p>';
+        return;
+    }
+    
+    challenges.forEach(challenge => {
+        const challengeCard = document.createElement('div');
+        challengeCard.className = 'challenge-card';
+        challengeCard.innerHTML = `
+            <h3 class="challenge-title">${challenge.title}</h3>
+            ${challenge.description ? `<p class="challenge-description">${challenge.description}</p>` : ''}
+            <div class="challenge-meta">
+                <span class="challenge-questions">${challenge.questions.length} questions</span>
+                ${challenge.estimatedTime ? `<span class="challenge-time">~${challenge.estimatedTime} min</span>` : ''}
+                ${challenge.difficulty ? `<span class="challenge-difficulty ${challenge.difficulty}">${challenge.difficulty}</span>` : ''}
+            </div>
+            <button class="btn-primary start-challenge-btn" data-challenge-id="${challenge.challengeId}">Start Challenge</button>
+        `;
+        
+        const startBtn = challengeCard.querySelector('.start-challenge-btn');
+        startBtn.addEventListener('click', () => startChallenge(challenge));
+        
+        challengesList.appendChild(challengeCard);
+    });
+}
+
+// Firebase - Fetch questions (for daily questions)
+async function fetchQuestionsFromFirebase() {
+    if (!db) {
+        throw new Error('Firebase not initialized. Please configure Firebase.');
+    }
+    
+    try {
+        const questionsSnapshot = await db.collection('questions').get();
+        const questions = [];
+        
+        questionsSnapshot.forEach(doc => {
+            const data = doc.data();
+            questions.push({
+                id: doc.id,
+                date: data.date,
+                question: data.question,
+                answer: data.answer
+            });
+        });
+        
+        return questions;
+    } catch (error) {
+        console.error('Error fetching questions from Firebase:', error);
+        throw error;
+    }
+}
+
+// Firebase - Get user's completed questions (for daily questions)
+async function getUserCompletedQuestions() {
+    if (!db || !currentUser) {
+        return [];
+    }
+    
+    try {
+        const userCompletionsRef = db.collection('userCompletions').doc(currentUser.uid);
+        const doc = await userCompletionsRef.get();
+        
+        if (doc.exists) {
+            const data = doc.data();
+            return data.completedQuestionIds || [];
+        }
+        return [];
+    } catch (error) {
+        console.error('Error fetching user completions:', error);
+        return [];
+    }
+}
+
+// Firebase - Mark question as completed (for daily questions)
+async function markQuestionCompleted(questionId) {
+    if (!db || !currentUser) {
+        return;
+    }
+    
+    try {
+        const userCompletionsRef = db.collection('userCompletions').doc(currentUser.uid);
+        const doc = await userCompletionsRef.get();
+        
+        if (doc.exists) {
+            const data = doc.data();
+            const completedIds = data.completedQuestionIds || [];
+            if (!completedIds.includes(questionId)) {
+                completedIds.push(questionId);
+                await userCompletionsRef.update({
+                    completedQuestionIds: completedIds,
+                    completedCount: firebase.firestore.FieldValue.increment(1),
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }
+        } else {
+            await userCompletionsRef.set({
+                userId: currentUser.uid,
+                email: currentUser.email,
+                completedQuestionIds: [questionId],
+                completedCount: 1,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+        
+        console.log('Question marked as completed:', questionId);
+    } catch (error) {
+        console.error('Error marking question as completed:', error);
+    }
+}
+
+// Filter questions - exclude completed ones for current user
+async function getAvailableQuestions(questions) {
+    if (!currentUser) {
+        return [];
+    }
+    
+    const completedIds = await getUserCompletedQuestions();
+    return questions.filter(q => !completedIds.includes(q.id));
+}
+
+// Start a challenge (quiz)
+async function startChallenge(challenge) {
+    currentChallenge = challenge;
+    currentChallengeQuestions = challenge.questions || [];
+    currentQuizQuestionIndex = 0;
+    selectedQuizAnswer = null;
+    quizScore = 0;
+    
+    if (currentChallengeQuestions.length === 0) {
+        console.error('Challenge has no questions');
+        showNoContent('This challenge has no questions available.');
+        return;
+    }
+    
+    showQuiz();
+    renderQuizQuestion();
+}
+
+// Render quiz question
+function renderQuizQuestion() {
+    if (!currentChallengeQuestions || currentChallengeQuestions.length === 0 || 
+        currentQuizQuestionIndex >= currentChallengeQuestions.length) {
+        console.error('No quiz question available');
+        return;
+    }
+    
+    const question = currentChallengeQuestions[currentQuizQuestionIndex];
+    if (!question) {
+        console.error('Quiz question is undefined');
+        return;
+    }
+    
+    // Update progress
+    quizProgressText.textContent = `Question ${currentQuizQuestionIndex + 1} of ${currentChallengeQuestions.length}`;
+    
+    // Update question text
+    quizQuestionText.textContent = question.question;
+    
+    // Clear and render options
+    quizOptions.innerHTML = '';
+    selectedQuizAnswer = null;
+    quizNextButton.classList.add('hidden');
+    quizExplanation.classList.add('hidden');
+    quizExplanation.textContent = '';
+    
+    question.options.forEach((option, index) => {
+        const optionButton = document.createElement('button');
+        optionButton.className = 'quiz-option';
+        optionButton.textContent = option;
+        optionButton.dataset.index = index;
+        optionButton.addEventListener('click', () => selectQuizAnswer(index, question.correctAnswer));
+        quizOptions.appendChild(optionButton);
+    });
+}
+
+// Handle answer selection
+function selectQuizAnswer(selectedIndex, correctIndex) {
+    if (selectedQuizAnswer !== null) return; // Already answered
+    
+    selectedQuizAnswer = selectedIndex;
+    const optionButtons = quizOptions.querySelectorAll('.quiz-option');
+    
+    // Disable all options
+    optionButtons.forEach(btn => {
+        btn.disabled = true;
+        btn.style.cursor = 'not-allowed';
+    });
+    
+    // Mark correct answer (green)
+    optionButtons[correctIndex].classList.add('correct');
+    
+    // Mark selected answer
+    if (selectedIndex === correctIndex) {
+        optionButtons[selectedIndex].classList.add('correct');
+        quizScore++;
     } else {
-        showCompletion();
+        optionButtons[selectedIndex].classList.add('incorrect');
+    }
+    
+    // Show explanation if available
+    const question = currentChallengeQuestions[currentQuizQuestionIndex];
+    if (question.explanation) {
+        quizExplanation.textContent = question.explanation;
+        quizExplanation.classList.remove('hidden');
+    }
+    
+    // Show next button
+    quizNextButton.classList.remove('hidden');
+}
+
+// Handle next quiz question
+async function handleQuizNext() {
+    currentQuizQuestionIndex++;
+    
+    if (currentQuizQuestionIndex >= currentChallengeQuestions.length) {
+        // All questions completed
+        if (currentChallenge && currentChallenge.challengeId) {
+            await markChallengeCompleted(currentChallenge.challengeId);
+        }
+        // Show completion with score
+        showChallengeCompletion();
+                } else {
+        // Render next question
+        renderQuizQuestion();
+    }
+}
+
+// Show daily questions completion
+function showDailyQuestionsCompletion() {
+    hideAllScreens();
+    completionScreen.classList.remove('hidden');
+    isDailyQuestionsMode = false;
+    
+    const completionText = document.querySelector('.completion-text');
+    const viewMoreBtn = document.getElementById('viewMoreChallengesButton');
+    const backBtn = document.getElementById('backToLandingButton2');
+    const shareBtn = document.getElementById('shareScreenshotButton');
+    
+    if (completionText) {
+        completionText.textContent = 'You showed up today. ✨';
+    }
+    
+    // Show share button for daily questions
+    if (shareBtn) {
+        shareBtn.classList.remove('hidden');
+    }
+    
+    // Hide "View More Challenges" button for daily questions
+    if (viewMoreBtn) {
+        viewMoreBtn.classList.add('hidden');
+    }
+    
+    // Show back button
+    if (backBtn) {
+        backBtn.classList.remove('hidden');
+    }
+}
+
+// Show challenge completion
+function showChallengeCompletion() {
+    hideAllScreens();
+    completionScreen.classList.remove('hidden');
+    isDailyQuestionsMode = false;
+    
+    const completionText = document.querySelector('.completion-text');
+    const viewMoreBtn = document.getElementById('viewMoreChallengesButton');
+    const backBtn = document.getElementById('backToLandingButton2');
+    const shareBtn = document.getElementById('shareScreenshotButton');
+    
+    if (completionText) {
+        const percentage = Math.round((quizScore / currentChallengeQuestions.length) * 100);
+        completionText.textContent = `Challenge Complete! 🎉\nScore: ${quizScore}/${currentChallengeQuestions.length} (${percentage}%)`;
+    }
+    
+    // Show share button for challenges
+    if (shareBtn) {
+        shareBtn.classList.remove('hidden');
+    }
+    
+    // Show "View More Challenges" button for challenges
+    if (viewMoreBtn) {
+        viewMoreBtn.classList.remove('hidden');
+    }
+    
+    // Show back button
+    if (backBtn) {
+        backBtn.classList.remove('hidden');
     }
 }
 
 // Event listeners
+signInTab.addEventListener('click', () => switchTab('signin'));
+signUpTab.addEventListener('click', () => switchTab('signup'));
 loginButton.addEventListener('click', handleLogin);
 signupButton.addEventListener('click', handleSignup);
-showSignupButton.addEventListener('click', showSignup);
-showLoginButton.addEventListener('click', showLogin);
 logoutButton.addEventListener('click', handleLogout);
 
-startButton.addEventListener('click', async () => {
+// Start daily questions
+startQuestionsButton.addEventListener('click', async () => {
     if (!currentUser) {
-        showLogin();
+        showAuth();
         return;
     }
     
@@ -421,12 +848,12 @@ startButton.addEventListener('click', async () => {
         const availableQuestions = await getAvailableQuestions(allQuestions);
         
         if (availableQuestions.length === 0) {
-            showNoContent();
+            showNoContent('No questions available for now.');
             return;
         }
         
-        // Use available questions (show all, or limit to 5, etc.)
-        selectedQuestions = availableQuestions.slice(0, 5); // Show up to 5 questions at a time
+        // Use all available questions
+        selectedQuestions = availableQuestions;
         currentQuestionIndex = 0;
         
         // Render first question
@@ -434,10 +861,70 @@ startButton.addEventListener('click', async () => {
         renderQuestion();
         
     } catch (error) {
-        console.error('Error loading content:', error);
-        showNoContent();
+        console.error('Error loading questions:', error);
+        showNoContent('No questions available for now.');
     }
 });
+
+viewChallengesButton.addEventListener('click', async () => {
+    if (!currentUser) {
+        showAuth();
+        return;
+    }
+    
+    showLoading();
+    
+    try {
+        // Fetch all challenges
+        const allChallenges = await fetchChallengesFromFirebase();
+        
+        // Filter out completed challenges for this user
+        const availableChallenges = await getAvailableChallenges(allChallenges);
+        
+        if (availableChallenges.length === 0) {
+            showNoContent('No challenges available for now.');
+            return;
+        }
+        
+        // Render challenges list
+        showChallenges();
+        renderChallenges(availableChallenges);
+        
+    } catch (error) {
+        console.error('Error loading challenges:', error);
+        showNoContent('No challenges available for now.');
+    }
+});
+
+if (backToLandingFromChallenges) {
+    backToLandingFromChallenges.addEventListener('click', showLanding);
+} else {
+    console.warn('backToLandingFromChallenges not found');
+}
+
+if (viewMoreChallengesButton) {
+    viewMoreChallengesButton.addEventListener('click', async () => {
+        showLoading();
+        
+        try {
+            const allChallenges = await fetchChallengesFromFirebase();
+            const availableChallenges = await getAvailableChallenges(allChallenges);
+            
+            if (availableChallenges.length === 0) {
+                showNoContent('No challenges available for now.');
+                return;
+            }
+            
+            showChallenges();
+            renderChallenges(availableChallenges);
+        } catch (error) {
+            console.error('Error loading challenges:', error);
+            showNoContent('No challenges available for now.');
+        }
+    });
+} else {
+    console.warn('viewMoreChallengesButton not found');
+}
 
 // Answer overlay click handler
 answerOverlay.addEventListener('click', revealAnswer);
@@ -446,13 +933,133 @@ answerOverlay.addEventListener('touchend', (e) => {
     revealAnswer();
 });
 
-// Next button handler
+// Next button handler (for daily questions)
 nextButton.addEventListener('click', handleNext);
 
+// Quiz next button handler
+if (quizNextButton) {
+    quizNextButton.addEventListener('click', handleQuizNext);
+} else {
+    console.warn('quizNextButton not found - quiz functionality may not work');
+}
+
 // Back button handlers
-backToLandingButton1.addEventListener('click', showLanding);
-backToLandingButton2.addEventListener('click', showLanding);
-backToLandingButton4.addEventListener('click', showLanding);
+if (backToLandingButton1) {
+    backToLandingButton1.addEventListener('click', () => {
+        console.log('backToLandingButton1 clicked');
+        showLanding();
+    });
+} else {
+    console.error('backToLandingButton1 not found');
+}
+
+if (backToLandingButton2) {
+    backToLandingButton2.addEventListener('click', () => {
+        console.log('backToLandingButton2 clicked');
+        showLanding();
+    });
+} else {
+    console.error('backToLandingButton2 not found');
+}
+
+// Screenshot sharing functionality
+async function captureAndShareScreenshot() {
+    if (!completionContent) {
+        console.error('Completion content not found');
+        return;
+    }
+
+    try {
+        // Check if html2canvas is loaded
+        if (typeof html2canvas === 'undefined') {
+            alert('Screenshot feature not available. Please refresh the page.');
+            return;
+        }
+
+        // Show loading state
+        if (shareScreenshotButton) {
+            shareScreenshotButton.disabled = true;
+            shareScreenshotButton.textContent = 'Capturing...';
+        }
+
+        // Capture the completion content as canvas
+        const canvas = await html2canvas(completionContent, {
+            backgroundColor: null,
+            scale: 2, // Higher quality
+            useCORS: true,
+            logging: false
+        });
+
+        // Convert canvas to blob
+        canvas.toBlob(async (blob) => {
+            if (!blob) {
+                console.error('Failed to create image blob');
+                if (shareScreenshotButton) {
+                    shareScreenshotButton.disabled = false;
+                    shareScreenshotButton.textContent = 'Share Screenshot';
+                }
+                return;
+            }
+
+            // Check if Web Share API is available (mobile devices)
+            if (navigator.share && navigator.canShare) {
+                try {
+                    const file = new File([blob], 'completion.png', { type: 'image/png' });
+                    if (navigator.canShare({ files: [file] })) {
+                        await navigator.share({
+                            files: [file],
+                            title: 'Challenge Completed!',
+                            text: 'I completed a challenge!'
+                        });
+                        // Reset button
+                        if (shareScreenshotButton) {
+                            shareScreenshotButton.disabled = false;
+                            shareScreenshotButton.textContent = 'Share Screenshot';
+                        }
+                        return;
+                    }
+                } catch (shareError) {
+                    // If share fails, fall back to download
+                    console.log('Share failed, falling back to download:', shareError);
+                }
+            }
+            
+            // Desktop: Download the screenshot
+            downloadScreenshot(blob);
+            
+            // Reset button
+            if (shareScreenshotButton) {
+                shareScreenshotButton.disabled = false;
+                shareScreenshotButton.textContent = 'Share Screenshot';
+            }
+        }, 'image/png');
+    } catch (error) {
+        console.error('Error capturing screenshot:', error);
+        alert('Failed to capture screenshot. Please try again.');
+        if (shareScreenshotButton) {
+            shareScreenshotButton.disabled = false;
+            shareScreenshotButton.textContent = 'Share Screenshot';
+        }
+    }
+}
+
+function downloadScreenshot(blob) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `completion-${new Date().toISOString().split('T')[0]}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+// Share screenshot button handler
+if (shareScreenshotButton) {
+    shareScreenshotButton.addEventListener('click', captureAndShareScreenshot);
+} else {
+    console.warn('shareScreenshotButton not found');
+}
 
 // Initial setup - wait for auth state
 // Auth state listener handles initial navigation

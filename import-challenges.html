@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulk Import Challenges to Firebase</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            max-width: 1000px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .info {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            border-left: 4px solid #2196f3;
+        }
+        .warning {
+            background: #fff3e0;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            border-left: 4px solid #ff9800;
+        }
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: #555;
+        }
+        textarea {
+            width: 100%;
+            min-height: 400px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            margin-bottom: 20px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #4caf50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+            display: none;
+        }
+        .status-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .example {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+        .example-title {
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+    </style>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <!-- Firebase Config - Must be loaded before this script -->
+    <script src="firebase-config.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Bulk Import Challenges to Firebase</h1>
+        
+        <div class="info">
+            <strong>Instructions:</strong>
+            <ol>
+                <li>Paste your challenges JSON data in the textarea below</li>
+                <li>Click "Import Challenges" to upload to Firebase</li>
+                <li>Wait for the import to complete (you'll see progress messages)</li>
+                <li>Check Firebase Console to verify the challenges were imported</li>
+            </ol>
+        </div>
+
+        <div class="warning">
+            <strong>Important:</strong>
+            <ul>
+                <li>Make sure your Firebase security rules allow writes to the <code>challenges</code> collection</li>
+                <li>Each challenge must have a unique <code>challengeId</code></li>
+                <li>Each question must have 4 options and a <code>correctAnswer</code> index (0-3)</li>
+                <li>The format must match the example structure below</li>
+            </ul>
+        </div>
+
+        <label for="challengesData">Challenges JSON Data:</label>
+        <textarea id="challengesData" placeholder='Paste your challenges JSON here...'></textarea>
+
+        <button id="importButton" onclick="importChallenges()" disabled>Import Challenges</button>
+        <button onclick="loadExample()">Load Example</button>
+
+        <div id="status" class="status"></div>
+
+        <div class="example">
+            <div class="example-title">Example JSON Format:</div>
+            <pre>{
+  "challenge1": {
+    "title": "Kerala History Basics",
+    "description": "Test your knowledge of Kerala history and culture",
+    "difficulty": "beginner",
+    "estimatedTime": 10,
+    "questions": [
+      {
+        "questionId": "q001",
+        "question": "Kerala was formed as a state in which year?",
+        "options": ["1950", "1956", "1960", "1947"],
+        "correctAnswer": 1,
+        "explanation": "Kerala was formed on November 1, 1956, as part of the States Reorganisation Act."
+      },
+      {
+        "questionId": "q002",
+        "question": "What is the longest river in Kerala?",
+        "options": ["Bharathapuzha", "Periyar", "Pamba", "Chalakudy"],
+        "correctAnswer": 1,
+        "explanation": "Periyar is the longest river in Kerala, flowing for about 244 km."
+      },
+      {
+        "questionId": "q003",
+        "question": "Who was the first Chief Minister of Kerala?",
+        "options": ["C. Achutha Menon", "E. M. S. Namboodiripad", "K. Karunakaran", "A. K. Antony"],
+        "correctAnswer": 1,
+        "explanation": "E. M. S. Namboodiripad was the first Chief Minister of Kerala, serving from 1957 to 1959."
+      }
+    ]
+  },
+  "challenge2": {
+    "title": "Indian Constitution Fundamentals",
+    "description": "Test your understanding of the Indian Constitution",
+    "difficulty": "intermediate",
+    "estimatedTime": 15,
+    "questions": [
+      {
+        "questionId": "q004",
+        "question": "Which article of the Indian Constitution deals with Right to Equality?",
+        "options": ["Article 14", "Article 15", "Article 16", "Article 17"],
+        "correctAnswer": 0,
+        "explanation": "Article 14 guarantees equality before law and equal protection of laws to all persons."
+      },
+      {
+        "questionId": "q005",
+        "question": "How many fundamental rights are guaranteed by the Indian Constitution?",
+        "options": ["5", "6", "7", "8"],
+        "correctAnswer": 1,
+        "explanation": "The Indian Constitution originally provided for 7 fundamental rights, but Right to Property was removed as a fundamental right."
+      }
+    ]
+  },
+  "challenge3": {
+    "title": "General Knowledge Quiz",
+    "description": "A mix of questions covering various topics",
+    "difficulty": "beginner",
+    "estimatedTime": 12,
+    "questions": [
+      {
+        "questionId": "q006",
+        "question": "What is the capital of Australia?",
+        "options": ["Sydney", "Melbourne", "Canberra", "Perth"],
+        "correctAnswer": 2,
+        "explanation": "Canberra is the capital city of Australia, located in the Australian Capital Territory."
+      },
+      {
+        "questionId": "q007",
+        "question": "Which planet is known as the Red Planet?",
+        "options": ["Venus", "Mars", "Jupiter", "Saturn"],
+        "correctAnswer": 1,
+        "explanation": "Mars is called the Red Planet due to its reddish appearance caused by iron oxide on its surface."
+      }
+    ]
+  }
+}</pre>
+            <div style="margin-top: 15px; padding: 12px; background: #f0f7ff; border-left: 4px solid #4A90E2; border-radius: 4px; font-size: 14px; color: #2C3E50;">
+                <strong>Note:</strong> The keys like "challenge1", "challenge2" are just for organizing multiple challenges in the JSON object. They don't affect the actual challengeId, which is auto-generated by Firebase when you import.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let db = null;
+
+        function initializeFirebase() {
+            if (typeof firebase === 'undefined') {
+                showStatus('Firebase SDK not loaded. Make sure the script tags are present.', 'error');
+                return;
+            }
+
+            if (typeof FIREBASE_CONFIG === 'undefined' || FIREBASE_CONFIG.apiKey === 'YOUR_API_KEY') {
+                showStatus('Firebase not configured. Please configure firebase-config.js first.', 'error');
+                return;
+            }
+
+            try {
+                firebase.initializeApp(FIREBASE_CONFIG);
+                db = firebase.firestore();
+                showStatus('Firebase initialized successfully!', 'success');
+                document.getElementById('importButton').disabled = false;
+            } catch (error) {
+                showStatus('Firebase initialization failed: ' + error.message, 'error');
+            }
+        }
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = message;
+            statusDiv.className = 'status status-' + type;
+            statusDiv.style.display = 'block';
+        }
+
+        function loadExample() {
+            const example = {
+                "challenge1": {
+                    "title": "Kerala History Basics",
+                    "description": "Test your knowledge of Kerala history and culture",
+                    "difficulty": "beginner",
+                    "estimatedTime": 10,
+                    "questions": [
+                        {
+                            "questionId": "q001",
+                            "question": "Kerala was formed as a state in which year?",
+                            "options": ["1950", "1956", "1960", "1947"],
+                            "correctAnswer": 1,
+                            "explanation": "Kerala was formed on November 1, 1956, as part of the States Reorganisation Act."
+                        },
+                        {
+                            "questionId": "q002",
+                            "question": "What is the longest river in Kerala?",
+                            "options": ["Bharathapuzha", "Periyar", "Pamba", "Chalakudy"],
+                            "correctAnswer": 1,
+                            "explanation": "Periyar is the longest river in Kerala, flowing for about 244 km."
+                        },
+                        {
+                            "questionId": "q003",
+                            "question": "Who was the first Chief Minister of Kerala?",
+                            "options": ["C. Achutha Menon", "E. M. S. Namboodiripad", "K. Karunakaran", "A. K. Antony"],
+                            "correctAnswer": 1,
+                            "explanation": "E. M. S. Namboodiripad was the first Chief Minister of Kerala, serving from 1957 to 1959."
+                        }
+                    ]
+                },
+                "challenge2": {
+                    "title": "Indian Constitution Fundamentals",
+                    "description": "Test your understanding of the Indian Constitution",
+                    "difficulty": "intermediate",
+                    "estimatedTime": 15,
+                    "questions": [
+                        {
+                            "questionId": "q004",
+                            "question": "Which article of the Indian Constitution deals with Right to Equality?",
+                            "options": ["Article 14", "Article 15", "Article 16", "Article 17"],
+                            "correctAnswer": 0,
+                            "explanation": "Article 14 guarantees equality before law and equal protection of laws to all persons."
+                        },
+                        {
+                            "questionId": "q005",
+                            "question": "How many fundamental rights are guaranteed by the Indian Constitution?",
+                            "options": ["5", "6", "7", "8"],
+                            "correctAnswer": 1,
+                            "explanation": "The Indian Constitution originally provided for 7 fundamental rights, but Right to Property was removed as a fundamental right."
+                        },
+                        {
+                            "questionId": "q006",
+                            "question": "Who is the guardian of the Indian Constitution?",
+                            "options": ["President", "Prime Minister", "Supreme Court", "Parliament"],
+                            "correctAnswer": 2,
+                            "explanation": "The Supreme Court is considered the guardian of the Indian Constitution as it has the power of judicial review."
+                        }
+                    ]
+                },
+                "challenge3": {
+                    "title": "General Knowledge Quiz",
+                    "description": "A mix of questions covering various topics",
+                    "difficulty": "beginner",
+                    "estimatedTime": 12,
+                    "questions": [
+                        {
+                            "questionId": "q007",
+                            "question": "What is the capital of Australia?",
+                            "options": ["Sydney", "Melbourne", "Canberra", "Perth"],
+                            "correctAnswer": 2,
+                            "explanation": "Canberra is the capital city of Australia, located in the Australian Capital Territory."
+                        },
+                        {
+                            "questionId": "q008",
+                            "question": "Which planet is known as the Red Planet?",
+                            "options": ["Venus", "Mars", "Jupiter", "Saturn"],
+                            "correctAnswer": 1,
+                            "explanation": "Mars is called the Red Planet due to its reddish appearance caused by iron oxide on its surface."
+                        },
+                        {
+                            "questionId": "q009",
+                            "question": "What is the SI unit of electric current?",
+                            "options": ["Volt", "Ampere", "Ohm", "Watt"],
+                            "correctAnswer": 1,
+                            "explanation": "Ampere (A) is the SI base unit of electric current, named after André-Marie Ampère."
+                        }
+                    ]
+                }
+            };
+            document.getElementById('challengesData').value = JSON.stringify(example, null, 2);
+        }
+
+        function validateChallenge(challenge, challengeId) {
+            const errors = [];
+
+            // challengeId is optional - will be auto-generated by Firebase
+            // If provided, it will be used, otherwise Firebase will generate one
+
+            if (!challenge.title || typeof challenge.title !== 'string') {
+                errors.push(`Challenge ${challengeId}: Missing or invalid title`);
+            }
+
+            if (!challenge.questions || !Array.isArray(challenge.questions)) {
+                errors.push(`Challenge ${challengeId}: Missing or invalid questions array`);
+                return errors;
+            }
+
+            if (challenge.questions.length === 0) {
+                errors.push(`Challenge ${challengeId}: questions array is empty`);
+            }
+
+            challenge.questions.forEach((question, index) => {
+                if (!question.questionId) {
+                    errors.push(`Challenge ${challengeId}, Question ${index}: Missing questionId`);
+                }
+
+                if (!question.question || typeof question.question !== 'string') {
+                    errors.push(`Challenge ${challengeId}, Question ${index}: Missing or invalid question text`);
+                }
+
+                if (!question.options || !Array.isArray(question.options)) {
+                    errors.push(`Challenge ${challengeId}, Question ${index}: Missing or invalid options array`);
+                } else if (question.options.length !== 4) {
+                    errors.push(`Challenge ${challengeId}, Question ${index}: options array must have exactly 4 items (has ${question.options.length})`);
+                }
+
+                if (typeof question.correctAnswer !== 'number') {
+                    errors.push(`Challenge ${challengeId}, Question ${index}: Missing or invalid correctAnswer (must be a number 0-3)`);
+                } else if (question.correctAnswer < 0 || question.correctAnswer > 3) {
+                    errors.push(`Challenge ${challengeId}, Question ${index}: correctAnswer must be between 0 and 3 (got ${question.correctAnswer})`);
+                }
+
+                if (question.explanation && typeof question.explanation !== 'string') {
+                    errors.push(`Challenge ${challengeId}, Question ${index}: explanation must be a string`);
+                }
+            });
+
+            if (challenge.difficulty && !['beginner', 'intermediate', 'advanced'].includes(challenge.difficulty)) {
+                errors.push(`Challenge ${challengeId}: difficulty must be "beginner", "intermediate", or "advanced"`);
+            }
+
+            if (challenge.estimatedTime && typeof challenge.estimatedTime !== 'number') {
+                errors.push(`Challenge ${challengeId}: estimatedTime must be a number`);
+            }
+
+            return errors;
+        }
+
+        async function importChallenges() {
+            const dataText = document.getElementById('challengesData').value.trim();
+
+            if (!dataText) {
+                showStatus('Please paste your challenges JSON data.', 'error');
+                return;
+            }
+
+            if (!db) {
+                showStatus('Firebase not initialized. Please check your configuration.', 'error');
+                return;
+            }
+
+            let challengesData;
+            try {
+                challengesData = JSON.parse(dataText);
+            } catch (error) {
+                showStatus('Invalid JSON format: ' + error.message, 'error');
+                return;
+            }
+
+            // Validate data structure
+            if (typeof challengesData !== 'object' || Array.isArray(challengesData)) {
+                showStatus('JSON must be an object with challenge IDs as keys.', 'error');
+                return;
+            }
+
+            // Validate all challenges
+            const allErrors = [];
+            for (const [challengeId, challenge] of Object.entries(challengesData)) {
+                const errors = validateChallenge(challenge, challengeId);
+                allErrors.push(...errors);
+            }
+
+            if (allErrors.length > 0) {
+                showStatus('Validation errors:\n' + allErrors.join('\n'), 'error');
+                return;
+            }
+
+            const importButton = document.getElementById('importButton');
+            importButton.disabled = true;
+            showStatus('Starting import...', 'info');
+
+            try {
+                const challenges = Object.entries(challengesData);
+                let successCount = 0;
+                let errorCount = 0;
+
+                for (const [challengeKey, challengeData] of challenges) {
+                    try {
+                        // Auto-generate document ID using Firebase
+                        const docRef = db.collection('challenges').doc();
+                        
+                        // Prepare challenge document with auto-generated challengeId
+                        const challengeDoc = {
+                            challengeId: docRef.id, // Set to the auto-generated document ID
+                            title: challengeData.title,
+                            description: challengeData.description || '',
+                            questions: challengeData.questions,
+                            difficulty: challengeData.difficulty || 'beginner',
+                            estimatedTime: challengeData.estimatedTime || 0,
+                            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        };
+
+                        // Set the document
+                        await docRef.set(challengeDoc);
+
+                        successCount++;
+                        showStatus(`Importing... ${successCount}/${challenges.length} challenges imported.`, 'info');
+                    } catch (error) {
+                        console.error(`Error importing challenge ${challengeKey}:`, error);
+                        errorCount++;
+                        showStatus(`Error importing challenge ${challengeKey}: ${error.message}`, 'error');
+                    }
+                }
+
+                if (errorCount === 0) {
+                    showStatus(`Successfully imported ${successCount} challenge(s)!`, 'success');
+                } else {
+                    showStatus(`Import completed with errors. ${successCount} succeeded, ${errorCount} failed.`, 'error');
+                }
+            } catch (error) {
+                console.error('Import error:', error);
+                showStatus('Import failed: ' + error.message, 'error');
+            } finally {
+                importButton.disabled = false;
+            }
+        }
+
+        // Initialize Firebase when page loads
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeFirebase);
+        } else {
+            setTimeout(initializeFirebase, 100);
+        }
+    </script>
+</body>
+</html>

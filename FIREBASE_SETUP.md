@@ -1,6 +1,6 @@
 # Firebase Setup Guide
 
-This app uses Firebase Firestore for both questions and completion logging.
+This app uses Firebase Authentication and Firestore for user-specific question tracking.
 
 ## Step 1: Create Firebase Project
 
@@ -104,7 +104,17 @@ service cloud.firestore {
 
 3. Click "Publish"
 
-## Step 7: Test
+## Step 8: Test
+
+1. Open your app in the browser
+2. Create an account or sign in
+3. Complete some questions
+4. Sign out and sign back in
+5. Verify completed questions don't appear again
+6. In Firebase Console, go to Firestore Database
+7. You should see:
+   - `questions` collection with your questions
+   - `userCompletions` collection with user-specific completion data
 
 1. Open your app in the browser
 2. Complete a day's ritual

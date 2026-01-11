@@ -3,6 +3,8 @@
 
 // Initialize Firebase (only if config is provided)
 let db = null;
+let auth = null;
+let currentUser = null;
 
 function initializeFirebase() {
     if (typeof firebase === 'undefined') {
@@ -18,7 +20,20 @@ function initializeFirebase() {
     try {
         firebase.initializeApp(FIREBASE_CONFIG);
         db = firebase.firestore();
+        auth = firebase.auth();
         console.log('Firebase initialized successfully');
+        
+        // Listen for auth state changes
+        auth.onAuthStateChanged((user) => {
+            currentUser = user;
+            if (user) {
+                console.log('User signed in:', user.email);
+                showLanding();
+            } else {
+                console.log('User signed out');
+                showLogin();
+            }
+        });
     } catch (error) {
         console.warn('Firebase initialization failed:', error);
     }
@@ -38,18 +53,23 @@ let currentQuestionIndex = 0;
 let selectedQuestions = [];
 
 // DOM elements
+const loginScreen = document.getElementById('loginScreen');
+const signupScreen = document.getElementById('signupScreen');
 const landingScreen = document.getElementById('landingScreen');
 const loadingScreen = document.getElementById('loadingScreen');
 const noContentScreen = document.getElementById('noContentScreen');
 const contentScreen = document.getElementById('contentScreen');
 const completionScreen = document.getElementById('completionScreen');
-const lockScreen = document.getElementById('lockScreen');
 const prizeScreen = document.getElementById('prizeScreen');
 
+const loginButton = document.getElementById('loginButton');
+const signupButton = document.getElementById('signupButton');
+const showSignupButton = document.getElementById('showSignupButton');
+const showLoginButton = document.getElementById('showLoginButton');
+const logoutButton = document.getElementById('logoutButton');
 const startButton = document.getElementById('startButton');
 const backToLandingButton1 = document.getElementById('backToLandingButton1');
 const backToLandingButton2 = document.getElementById('backToLandingButton2');
-const backToLandingButton3 = document.getElementById('backToLandingButton3');
 const backToLandingButton4 = document.getElementById('backToLandingButton4');
 const progressText = document.getElementById('progressText');
 const questionText = document.getElementById('questionText');
@@ -57,31 +77,40 @@ const answerText = document.getElementById('answerText');
 const answerContainer = document.getElementById('answerContainer');
 const answerOverlay = document.getElementById('answerOverlay');
 const nextButton = document.getElementById('nextButton');
+const authError = document.getElementById('authError');
+const signupError = document.getElementById('signupError');
 
 const questionContainer = document.querySelector('.question-container');
 
-// Utility functions
-function getTodayDate() {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
-
-
 // Screen management
 function hideAllScreens() {
+    loginScreen.classList.add('hidden');
+    signupScreen.classList.add('hidden');
     landingScreen.classList.add('hidden');
     loadingScreen.classList.add('hidden');
     noContentScreen.classList.add('hidden');
     contentScreen.classList.add('hidden');
     completionScreen.classList.add('hidden');
-    lockScreen.classList.add('hidden');
     prizeScreen.classList.add('hidden');
 }
 
+function showLogin() {
+    hideAllScreens();
+    loginScreen.classList.remove('hidden');
+    authError.classList.add('hidden');
+}
+
+function showSignup() {
+    hideAllScreens();
+    signupScreen.classList.remove('hidden');
+    signupError.classList.add('hidden');
+}
+
 function showLanding() {
+    if (!currentUser) {
+        showLogin();
+        return;
+    }
     hideAllScreens();
     landingScreen.classList.remove('hidden');
 }
@@ -106,69 +135,142 @@ function showCompletion() {
     completionScreen.classList.remove('hidden');
 }
 
-function showLock() {
-    hideAllScreens();
-    lockScreen.classList.remove('hidden');
-}
-
 function showPrize() {
     hideAllScreens();
     prizeScreen.classList.remove('hidden');
 }
 
-// 25-Day Progress Tracking
-function getCompletedDays() {
-    const stored = localStorage.getItem('completedDays');
-    if (!stored) return [];
-    try {
-        return JSON.parse(stored);
-    } catch (e) {
-        return [];
-    }
-}
-
-function addCompletedDay(date) {
-    const completedDays = getCompletedDays();
-    if (!completedDays.includes(date)) {
-        completedDays.push(date);
-        localStorage.setItem('completedDays', JSON.stringify(completedDays));
-    }
-    return completedDays.length;
-}
-
-function getCompletedDaysCount() {
-    return getCompletedDays().length;
-}
-
-function hasCompletedToday() {
-    const today = getTodayDate();
-    const completedDays = getCompletedDays();
-    return completedDays.includes(today);
-}
-
-// Firebase Logging
-async function logCompletion(date) {
-    if (!db) {
-        console.log('Firebase not configured. Skipping logging.');
-        console.log('To enable logging, configure Firebase and update FIREBASE_CONFIG in script.js');
+// Authentication functions
+async function handleLogin() {
+    const email = document.getElementById('loginEmail').value;
+    const password = document.getElementById('loginPassword').value;
+    
+    if (!email || !password) {
+        authError.textContent = 'Please enter email and password';
+        authError.classList.remove('hidden');
         return;
     }
     
     try {
-        const completionData = {
-            date: date,
-            completedAt: firebase.firestore.FieldValue.serverTimestamp(),
-            status: 'completed',
-            timestamp: new Date().toISOString()
-        };
-        
-        // Add document to 'completions' collection
-        await db.collection('completions').add(completionData);
-        console.log('Completion logged successfully to Firebase');
+        await auth.signInWithEmailAndPassword(email, password);
+        // Auth state listener will handle navigation
     } catch (error) {
-        // Silent failure - don't block progress, but log for debugging
-        console.warn('Firebase logging failed (non-blocking):', error);
-        console.warn('This is normal if Firebase is not configured or permissions are not set.');
+        authError.textContent = error.message;
+        authError.classList.remove('hidden');
+    }
+}
+
+async function handleSignup() {
+    const email = document.getElementById('signupEmail').value;
+    const password = document.getElementById('signupPassword').value;
+    
+    if (!email || !password) {
+        signupError.textContent = 'Please enter email and password';
+        signupError.classList.remove('hidden');
+        return;
+    }
+    
+    if (password.length < 6) {
+        signupError.textContent = 'Password must be at least 6 characters';
+        signupError.classList.remove('hidden');
+        return;
+    }
+    
+    try {
+        await auth.createUserWithEmailAndPassword(email, password);
+        // Auth state listener will handle navigation
+    } catch (error) {
+        signupError.textContent = error.message;
+        signupError.classList.remove('hidden');
+    }
+}
+
+async function handleLogout() {
+    try {
+        await auth.signOut();
+        // Auth state listener will handle navigation
+    } catch (error) {
+        console.error('Logout error:', error);
+    }
+}
+
+// Firebase - Get user's completed questions
+async function getUserCompletedQuestions() {
+    if (!db || !currentUser) {
+        return [];
+    }
+    
+    try {
+        const userCompletionsRef = db.collection('userCompletions').doc(currentUser.uid);
+        const doc = await userCompletionsRef.get();
+        
+        if (doc.exists) {
+            const data = doc.data();
+            return data.completedQuestionIds || [];
+        }
+        return [];
+    } catch (error) {
+        console.error('Error fetching user completions:', error);
+        return [];
+    }
+}
+
+// Firebase - Mark question as completed for user
+async function markQuestionCompleted(questionId) {
+    if (!db || !currentUser) {
+        return;
+    }
+    
+    try {
+        const userCompletionsRef = db.collection('userCompletions').doc(currentUser.uid);
+        const doc = await userCompletionsRef.get();
+        
+        if (doc.exists) {
+            const data = doc.data();
+            const completedIds = data.completedQuestionIds || [];
+            if (!completedIds.includes(questionId)) {
+                completedIds.push(questionId);
+                await userCompletionsRef.update({
+                    completedQuestionIds: completedIds,
+                    completedCount: firebase.firestore.FieldValue.increment(1),
+                    lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            }
+        } else {
+            await userCompletionsRef.set({
+                userId: currentUser.uid,
+                email: currentUser.email,
+                completedQuestionIds: [questionId],
+                completedCount: 1,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
+            });
+        }
+        
+        console.log('Question marked as completed for user');
+    } catch (error) {
+        console.error('Error marking question completed:', error);
+    }
+}
+
+// Firebase - Get user completion count
+async function getUserCompletionCount() {
+    if (!db || !currentUser) {
+        return 0;
+    }
+    
+    try {
+        const userCompletionsRef = db.collection('userCompletions').doc(currentUser.uid);
+        const doc = await userCompletionsRef.get();
+        
+        if (doc.exists) {
+            const data = doc.data();
+            return data.completedCount || 0;
+        }
+        return 0;
+    } catch (error) {
+        console.error('Error fetching completion count:', error);
+        return 0;
     }
 }
 
@@ -199,9 +301,14 @@ async function fetchQuestionsFromFirebase() {
     }
 }
 
-function filterTodayQuestions(questions) {
-    const today = getTodayDate();
-    return questions.filter(q => q.date === today);
+// Filter questions - exclude completed ones for current user
+async function getAvailableQuestions(questions) {
+    if (!currentUser) {
+        return [];
+    }
+    
+    const completedIds = await getUserCompletedQuestions();
+    return questions.filter(q => !completedIds.includes(q.id));
 }
 
 // Content rendering
@@ -237,54 +344,54 @@ function renderQuestion() {
             questionContainer.classList.add('fade-in');
             setTimeout(() => {
                 questionContainer.classList.remove('fade-in');
-            }, 400);
-        } else {
-            questionContainer.style.opacity = '1';
-            questionContainer.style.transform = 'translateY(0)';
+            }, 500);
         }
     }
+    
+    // Reset answer overlay
+    isRevealed = false;
 }
+
+// Answer reveal interaction
+let isRevealed = false;
 
 function revealAnswer() {
+    if (isRevealed) return;
+    
+    isRevealed = true;
     answerContainer.classList.add('revealed');
-    nextButton.classList.remove('hidden');
+    
+    // Show next button after reveal
+    setTimeout(() => {
+        nextButton.classList.remove('hidden');
+    }, 300);
 }
 
-function handleNext() {
-    if (nextButton.classList.contains('hidden')) return;
+// Handle next question
+async function handleNext() {
+    const currentQuestion = selectedQuestions[currentQuestionIndex];
     
-    // Animate out current question
-    if (questionContainer) {
-        questionContainer.classList.add('fade-out');
-        questionContainer.classList.remove('fade-in');
+    // Mark current question as completed
+    if (currentQuestion && currentQuestion.id) {
+        await markQuestionCompleted(currentQuestion.id);
     }
     
     currentQuestionIndex++;
     
-    if (currentQuestionIndex < selectedQuestions.length) {
-        // More questions to go
-        setTimeout(() => {
-            renderQuestion();
-        }, 300);
-    } else {
+    if (currentQuestionIndex >= selectedQuestions.length) {
         // All questions completed
-        setTimeout(() => {
-            handleContentCompletion();
-        }, 300);
+        await handleAllQuestionsCompleted();
+    } else {
+        // Render next question
+        renderQuestion();
     }
 }
 
-async function handleContentCompletion() {
-    const today = getTodayDate();
+async function handleAllQuestionsCompleted() {
+    const completionCount = await getUserCompletionCount();
     
-    // Add to completed days
-    const completedCount = addCompletedDay(today);
-    
-    // Log completion (silent, non-blocking)
-    logCompletion(today).catch(() => {});
-    
-    // Check if 25 days completed
-    if (completedCount >= 25) {
+    // Check if user reached 25 completions
+    if (completionCount >= 25) {
         showPrize();
     } else {
         showCompletion();
@@ -292,35 +399,34 @@ async function handleContentCompletion() {
 }
 
 // Event listeners
+loginButton.addEventListener('click', handleLogin);
+signupButton.addEventListener('click', handleSignup);
+showSignupButton.addEventListener('click', showSignup);
+showLoginButton.addEventListener('click', showLogin);
+logoutButton.addEventListener('click', handleLogout);
+
 startButton.addEventListener('click', async () => {
-    // Check if 25 days completed - show prize
-    if (getCompletedDaysCount() >= 25) {
-        showPrize();
-        return;
-    }
-    
-    // Check if already completed today
-    if (hasCompletedToday()) {
-        showLock();
+    if (!currentUser) {
+        showLogin();
         return;
     }
     
     showLoading();
     
     try {
-        // Fetch questions from Firebase
+        // Fetch all questions
         const allQuestions = await fetchQuestionsFromFirebase();
         
-        // Filter questions for today
-        const todayQuestions = filterTodayQuestions(allQuestions);
+        // Filter out completed questions for this user
+        const availableQuestions = await getAvailableQuestions(allQuestions);
         
-        if (todayQuestions.length === 0) {
+        if (availableQuestions.length === 0) {
             showNoContent();
             return;
         }
         
-        // Use all questions for today
-        selectedQuestions = todayQuestions;
+        // Use available questions (show all, or limit to 5, etc.)
+        selectedQuestions = availableQuestions.slice(0, 5); // Show up to 5 questions at a time
         currentQuestionIndex = 0;
         
         // Render first question
@@ -346,17 +452,7 @@ nextButton.addEventListener('click', handleNext);
 // Back button handlers
 backToLandingButton1.addEventListener('click', showLanding);
 backToLandingButton2.addEventListener('click', showLanding);
-backToLandingButton3.addEventListener('click', showLanding);
 backToLandingButton4.addEventListener('click', showLanding);
 
-// Initial setup
-window.addEventListener('load', () => {
-    // Check if 25 days completed
-    if (getCompletedDaysCount() >= 25) {
-        showPrize();
-    } else if (hasCompletedToday()) {
-        showLock();
-        } else {
-        showLanding();
-    }
-});
+// Initial setup - wait for auth state
+// Auth state listener handles initial navigation

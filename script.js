@@ -104,6 +104,55 @@ let selectedQuestions = [];
 let currentQuestionIndex = 0;
 let isDailyQuestionsMode = false;
 
+// Language management
+let currentLanguage = localStorage.getItem('appLanguage') || 'en'; // 'en' or 'ml'
+
+// Helper function to get text based on language
+function getText(obj, fallback = '') {
+    if (!obj) return fallback;
+    if (typeof obj === 'string') return obj; // Backward compatibility
+    return obj[currentLanguage] || obj['en'] || obj['ml'] || fallback;
+}
+
+// Update language preference
+function setLanguage(lang) {
+    currentLanguage = lang;
+    localStorage.setItem('appLanguage', lang);
+    updateLanguageToggles();
+    // Re-render current screen content
+    if (currentChallengeQuestions && currentChallengeQuestions.length > 0) {
+        renderQuizQuestion();
+    } else if (selectedQuestions && selectedQuestions.length > 0) {
+        renderQuestion();
+    } else if (challengesList && challengesList.children.length > 0) {
+        // Re-fetch and render challenges
+        if (viewChallengesButton) {
+            viewChallengesButton.click();
+        }
+    }
+}
+
+// Update all language toggle buttons
+function updateLanguageToggles() {
+    const toggles = document.querySelectorAll('.language-toggle');
+    toggles.forEach(toggle => {
+        const lang = toggle.dataset.lang;
+        if (lang === currentLanguage) {
+            toggle.classList.add('active');
+            toggle.querySelector('.lang-code').textContent = lang.toUpperCase();
+            toggle.querySelector('.lang-name').textContent = lang === 'en' ? 'English' : 'മലയാളം';
+        } else {
+            toggle.classList.remove('active');
+        }
+    });
+}
+
+// Toggle language
+function toggleLanguage() {
+    const newLang = currentLanguage === 'en' ? 'ml' : 'en';
+    setLanguage(newLang);
+}
+
 // For challenges (multiple choice quiz)
 let currentChallenge = null;
 let currentChallengeQuestions = [];
@@ -530,10 +579,10 @@ function renderQuestion() {
     progressText.textContent = `Question ${currentQuestionIndex + 1} of ${selectedQuestions.length}`;
     
     // Update question text
-    questionText.textContent = question.question;
+    questionText.textContent = getText(question.question);
     
     // Update answer text
-    answerText.textContent = question.answer;
+    answerText.textContent = getText(question.answer);
     
     // Reset answer overlay
     answerContainer.classList.remove('revealed');
@@ -609,14 +658,14 @@ function renderChallenges(challenges) {
         const challengeCard = document.createElement('div');
         challengeCard.className = 'challenge-card';
         challengeCard.innerHTML = `
-            <h3 class="challenge-title">${challenge.title}</h3>
-            ${challenge.description ? `<p class="challenge-description">${challenge.description}</p>` : ''}
+            <h3 class="challenge-title">${getText(challenge.title)}</h3>
+            ${challenge.description ? `<p class="challenge-description">${getText(challenge.description)}</p>` : ''}
             <div class="challenge-meta">
-                <span class="challenge-questions">${challenge.questions.length} questions</span>
-                ${challenge.estimatedTime ? `<span class="challenge-time">~${challenge.estimatedTime} min</span>` : ''}
+                <span class="challenge-questions">${challenge.questions.length} ${currentLanguage === 'ml' ? 'ചോദ്യങ്ങൾ' : 'questions'}</span>
+                ${challenge.estimatedTime ? `<span class="challenge-time">~${challenge.estimatedTime} ${currentLanguage === 'ml' ? 'മിനിറ്റ്' : 'min'}</span>` : ''}
                 ${challenge.difficulty ? `<span class="challenge-difficulty ${challenge.difficulty}">${challenge.difficulty}</span>` : ''}
             </div>
-            <button class="btn-primary start-challenge-btn" data-challenge-id="${challenge.challengeId}">Start Challenge</button>
+            <button class="btn-primary start-challenge-btn" data-challenge-id="${challenge.challengeId}">${currentLanguage === 'ml' ? 'ആരംഭിക്കുക' : 'Start Challenge'}</button>
         `;
         
         const startBtn = challengeCard.querySelector('.start-challenge-btn');
@@ -772,7 +821,7 @@ function renderQuizQuestion() {
     quizProgressText.textContent = `Question ${currentQuizQuestionIndex + 1} of ${currentChallengeQuestions.length}`;
     
     // Update question text
-    quizQuestionText.textContent = question.question;
+    quizQuestionText.textContent = getText(question.question);
     
     // Clear and render options
     quizOptions.innerHTML = '';
@@ -781,10 +830,23 @@ function renderQuizQuestion() {
     quizExplanation.classList.add('hidden');
     quizExplanation.textContent = '';
     
-    question.options.forEach((option, index) => {
+    // Handle options - can be array of strings or object with language keys
+    let optionsArray = [];
+    if (Array.isArray(question.options)) {
+        optionsArray = question.options;
+    } else if (question.options && typeof question.options === 'object') {
+        // Multilingual format: {en: [...], ml: [...]}
+        optionsArray = getText(question.options, []);
+        if (!Array.isArray(optionsArray)) {
+            // Fallback to English if current language not available
+            optionsArray = question.options['en'] || question.options['ml'] || [];
+        }
+    }
+    
+    optionsArray.forEach((option, index) => {
         const optionButton = document.createElement('button');
         optionButton.className = 'quiz-option';
-        optionButton.textContent = option;
+        optionButton.textContent = typeof option === 'string' ? option : getText(option);
         optionButton.dataset.index = index;
         optionButton.addEventListener('click', () => selectQuizAnswer(index, question.correctAnswer));
         quizOptions.appendChild(optionButton);
@@ -818,7 +880,7 @@ function selectQuizAnswer(selectedIndex, correctIndex) {
     // Show explanation if available
     const question = currentChallengeQuestions[currentQuizQuestionIndex];
     if (question.explanation) {
-        quizExplanation.textContent = question.explanation;
+        quizExplanation.textContent = getText(question.explanation);
         quizExplanation.classList.remove('hidden');
     }
     
@@ -1135,6 +1197,29 @@ if (backToLandingButton2) {
     });
 } else {
     console.error('backToLandingButton2 not found');
+}
+
+// Language toggle event listeners
+function setupLanguageToggles() {
+    const toggles = document.querySelectorAll('.language-toggle');
+    toggles.forEach(toggle => {
+        toggle.addEventListener('click', () => {
+            const currentLang = toggle.dataset.lang;
+            const newLang = currentLang === 'en' ? 'ml' : 'en';
+            toggle.dataset.lang = newLang;
+            setLanguage(newLang);
+        });
+    });
+    updateLanguageToggles();
+}
+
+// Initialize language on page load
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        setupLanguageToggles();
+    });
+} else {
+    setupLanguageToggles();
 }
 
 // Screenshot sharing functionality

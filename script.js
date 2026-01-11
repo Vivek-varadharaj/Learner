@@ -116,16 +116,24 @@ function getText(obj, fallback = '') {
 
 // Update language preference
 function setLanguage(lang) {
+    if (currentLanguage === lang) {
+        // Already in this language, no need to update
+        return;
+    }
+    
     currentLanguage = lang;
     localStorage.setItem('appLanguage', lang);
     updateLanguageToggles();
+    
     // Re-render current screen content
     if (currentChallengeQuestions && currentChallengeQuestions.length > 0) {
+        // Re-render quiz question to update question text and options
         renderQuizQuestion();
     } else if (selectedQuestions && selectedQuestions.length > 0) {
+        // Re-render daily question to update question and answer text
         renderQuestion();
     } else if (challengesList && challengesList.children.length > 0) {
-        // Re-fetch and render challenges
+        // Re-fetch and render challenges to update challenge titles/descriptions
         if (viewChallengesButton) {
             viewChallengesButton.click();
         }
@@ -136,14 +144,19 @@ function setLanguage(lang) {
 function updateLanguageToggles() {
     const toggles = document.querySelectorAll('.language-toggle');
     toggles.forEach(toggle => {
-        const lang = toggle.dataset.lang;
-        if (lang === currentLanguage) {
-            toggle.classList.add('active');
-            toggle.querySelector('.lang-code').textContent = lang.toUpperCase();
-            toggle.querySelector('.lang-name').textContent = lang === 'en' ? 'English' : 'മലയാളം';
-        } else {
-            toggle.classList.remove('active');
+        // Always show the current language on the button
+        const langCode = toggle.querySelector('.lang-code');
+        const langName = toggle.querySelector('.lang-name');
+        
+        if (langCode) {
+            langCode.textContent = currentLanguage.toUpperCase();
         }
+        if (langName) {
+            langName.textContent = currentLanguage === 'en' ? 'English' : 'മലയാളം';
+        }
+        
+        // The button is always "active" since it shows the current language
+        toggle.classList.add('active');
     });
 }
 
@@ -624,9 +637,12 @@ async function handleNext() {
     try {
         const currentQuestion = selectedQuestions[currentQuestionIndex];
         
-        // Mark current question as completed
-        if (currentQuestion && currentQuestion.id) {
-            await markQuestionCompleted(currentQuestion.id);
+        // Mark current question as completed (use questionId if available, otherwise use id)
+        if (currentQuestion) {
+            const questionIdToMark = currentQuestion.questionId || currentQuestion.id;
+            if (questionIdToMark) {
+                await markQuestionCompleted(questionIdToMark);
+            }
         }
         
         currentQuestionIndex++;
@@ -675,27 +691,74 @@ function renderChallenges(challenges) {
     });
 }
 
-// Firebase - Fetch questions (for daily questions)
+// Helper function to shuffle array (Fisher-Yates algorithm)
+function shuffleArray(array) {
+    const shuffled = [...array];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+}
+
+// Firebase - Fetch questions from challenges (for daily questions)
 async function fetchQuestionsFromFirebase() {
     if (!db) {
         throw new Error('Firebase not initialized. Please configure Firebase.');
     }
     
     try {
-        const questionsSnapshot = await db.collection('questions').get();
-        const questions = [];
+        // Fetch all challenges
+        const challenges = await fetchChallengesFromFirebase();
         
-        questionsSnapshot.forEach(doc => {
-            const data = doc.data();
-            questions.push({
-                id: doc.id,
-                date: data.date,
-                question: data.question,
-                answer: data.answer
-            });
+        // Extract all questions from all challenges
+        const allQuestions = [];
+        
+        challenges.forEach(challenge => {
+            if (challenge.questions && Array.isArray(challenge.questions)) {
+                challenge.questions.forEach(question => {
+                    // Get the correct answer option
+                    let correctAnswerText = '';
+                    const options = question.options;
+                    
+                    if (Array.isArray(options)) {
+                        // Old format: array of strings
+                        correctAnswerText = options[question.correctAnswer] || '';
+                    } else if (options && typeof options === 'object') {
+                        // New multilingual format: {en: [...], ml: [...]}
+                        const langOptions = options[currentLanguage] || options['en'] || options['ml'] || [];
+                        if (Array.isArray(langOptions)) {
+                            correctAnswerText = langOptions[question.correctAnswer] || '';
+                        }
+                    }
+                    
+                    // Get explanation if available
+                    const explanation = getText(question.explanation, '');
+                    
+                    // Create answer text: correct option + explanation (if available)
+                    let answerText = correctAnswerText;
+                    if (explanation) {
+                        answerText = answerText ? `${answerText}. ${explanation}` : explanation;
+                    }
+                    
+                    // Convert challenge question to daily question format
+                    allQuestions.push({
+                        id: question.questionId || `${challenge.challengeId}_${question.questionId || Math.random()}`,
+                        questionId: question.questionId,
+                        challengeId: challenge.challengeId,
+                        question: question.question, // Can be string or {en: string, ml: string}
+                        answer: answerText || getText(question.explanation, 'No answer available'),
+                        // Keep original question data for reference
+                        originalQuestion: question
+                    });
+                });
+            }
         });
         
-        return questions;
+        // Shuffle/mix up all questions
+        const shuffledQuestions = shuffleArray(allQuestions);
+        
+        return shuffledQuestions;
     } catch (error) {
         console.error('Error fetching questions from Firebase:', error);
         throw error;
@@ -768,7 +831,11 @@ async function getAvailableQuestions(questions) {
     }
     
     const completedIds = await getUserCompletedQuestions();
-    return questions.filter(q => !completedIds.includes(q.id));
+    return questions.filter(q => {
+        // Check both questionId and id for compatibility
+        const questionId = q.questionId || q.id;
+        return !completedIds.includes(questionId) && !completedIds.includes(q.id);
+    });
 }
 
 // Start a challenge (quiz)
@@ -833,20 +900,31 @@ function renderQuizQuestion() {
     // Handle options - can be array of strings or object with language keys
     let optionsArray = [];
     if (Array.isArray(question.options)) {
+        // Old format: array of strings (backward compatibility)
         optionsArray = question.options;
     } else if (question.options && typeof question.options === 'object') {
         // Multilingual format: {en: [...], ml: [...]}
-        optionsArray = getText(question.options, []);
-        if (!Array.isArray(optionsArray)) {
-            // Fallback to English if current language not available
-            optionsArray = question.options['en'] || question.options['ml'] || [];
+        // Try to get options for current language
+        if (question.options[currentLanguage] && Array.isArray(question.options[currentLanguage])) {
+            optionsArray = question.options[currentLanguage];
+        } else if (question.options['en'] && Array.isArray(question.options['en'])) {
+            // Fallback to English
+            optionsArray = question.options['en'];
+        } else if (question.options['ml'] && Array.isArray(question.options['ml'])) {
+            // Fallback to Malayalam
+            optionsArray = question.options['ml'];
+        } else {
+            // Last resort: try to extract any array from the object
+            optionsArray = Object.values(question.options).find(val => Array.isArray(val)) || [];
         }
     }
     
+    // Render options
     optionsArray.forEach((option, index) => {
         const optionButton = document.createElement('button');
         optionButton.className = 'quiz-option';
-        optionButton.textContent = typeof option === 'string' ? option : getText(option);
+        // Options should be strings, but handle multilingual objects just in case
+        optionButton.textContent = typeof option === 'string' ? option : (getText(option) || String(option));
         optionButton.dataset.index = index;
         optionButton.addEventListener('click', () => selectQuizAnswer(index, question.correctAnswer));
         quizOptions.appendChild(optionButton);
@@ -1071,20 +1149,26 @@ if (startQuestionsButton) {
         showLoading();
         
         try {
-            // Fetch all questions
+            // Fetch all questions from challenges (already shuffled)
             const allQuestions = await fetchQuestionsFromFirebase();
+            
+            if (allQuestions.length === 0) {
+                showNoContent('No practice questions available. Please add challenges first.');
+                return;
+            }
             
             // Filter out completed questions for this user
             const availableQuestions = await getAvailableQuestions(allQuestions);
             
             if (availableQuestions.length === 0) {
-                showNoContent('No practice questions available for now.');
+                showNoContent('You have completed all available practice questions! Great job!');
                 return;
             }
             
-            // Use all available questions
+            // Use all available questions from all challenges
             selectedQuestions = availableQuestions;
             currentQuestionIndex = 0;
+            isDailyQuestionsMode = true;
             
             // Render first question
             showContent();
@@ -1203,10 +1287,13 @@ if (backToLandingButton2) {
 function setupLanguageToggles() {
     const toggles = document.querySelectorAll('.language-toggle');
     toggles.forEach(toggle => {
-        toggle.addEventListener('click', () => {
-            const currentLang = toggle.dataset.lang;
-            const newLang = currentLang === 'en' ? 'ml' : 'en';
-            toggle.dataset.lang = newLang;
+        // Remove any existing listeners by cloning
+        const newToggle = toggle.cloneNode(true);
+        toggle.parentNode.replaceChild(newToggle, toggle);
+        
+        newToggle.addEventListener('click', () => {
+            // Toggle to the other language
+            const newLang = currentLanguage === 'en' ? 'ml' : 'en';
             setLanguage(newLang);
         });
     });
